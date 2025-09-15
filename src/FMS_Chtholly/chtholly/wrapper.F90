@@ -1,0 +1,136 @@
+module Chtholly_c_wrapper
+
+  use fms_mod,            only: fms_init, fms_end
+
+  use mpp_mod,            only: mpp_npes, mpp_get_current_pelist
+  use mpp_mod,            only: mpp_pe
+  
+  use mpp_domains_mod,    only: MPP_DOMAIN_TIME
+  use mpp_domains_mod,    only: domain2d
+  use mpp_domains_mod,    only: mpp_domains_init
+  use mpp_domains_mod,    only: mpp_define_mosaic
+  use mpp_domains_mod,    only: mpp_get_compute_domain, mpp_get_data_domain
+
+implicit none
+
+public :: chtholly_init, chtholly_end
+
+type(domain2d),public :: domain
+integer, allocatable, dimension(:),public :: pelist
+integer, public :: isd, ied, jsd, jed
+integer, public :: is, ie, js, je
+integer :: tile
+
+
+contains
+  subroutine chtholly_init() bind(C, name="chtholly_init")
+    implicit none
+    call fms_init()
+    allocate ( pelist(mpp_npes()) )
+    call mpp_get_current_pelist(pelist)
+    call mpp_domains_init(MPP_DOMAIN_TIME)
+    call chtholly_define_cube()
+  end subroutine chtholly_init
+
+  subroutine chtholly_end() bind(C, name="chtholly_end")
+    implicit none
+    deallocate ( pelist )
+    call fms_end()
+  end subroutine chtholly_end
+
+  subroutine chtholly_define_cube()
+    implicit none
+
+    integer, parameter :: num_contact = 12, nregions = 6
+    integer, dimension(nregions)    :: pe_start, pe_end
+    integer, dimension(num_contact) :: &
+        tile1, tile2, &
+        istart1, iend1, jstart1, jend1, &
+        istart2, iend2, jstart2, jend2
+    integer, dimension(2,nregions)  :: layout2D
+    integer, dimension(4,nregions)  :: global_indices
+    integer :: npes_per_tile
+
+    integer :: nx, ny, ng, n
+    integer :: layout(2)
+
+    nx = 96
+    ny = 96
+    ng  = 3
+    layout=[1,2]
+    npes_per_tile = layout(1)*layout(2)
+
+    do n = 1, nregions
+        global_indices(:,n) = [1,nx,1,ny]
+        layout2D(:,n)         = layout
+        pe_start(n) = pelist(1) + (n-1)*npes_per_tile
+        pe_end(n)   = pe_start(n) + npes_per_tile -1
+    end do
+
+  tile1(1) = 1; tile2(1) = 2
+  istart1(1) = nx; iend1(1) = nx; jstart1(1) = 1;  jend1(1) = ny
+  istart2(1) = 1;  iend2(1) = 1;  jstart2(1) = 1;  jend2(1) = ny
+  !--- Contact line 2, between tile 1 (NORTH) and tile 3 (WEST)
+  tile1(2) = 1; tile2(2) = 3
+  istart1(2) = 1;  iend1(2) = nx; jstart1(2) = ny; jend1(2) = ny
+  istart2(2) = 1;  iend2(2) = 1;  jstart2(2) = ny; jend2(2) = 1
+  !--- Contact line 3, between tile 1 (WEST) and tile 5 (NORTH)
+  tile1(3) = 1; tile2(3) = 5
+  istart1(3) = 1;  iend1(3) = 1;  jstart1(3) = 1;  jend1(3) = ny
+  istart2(3) = nx; iend2(3) = 1;  jstart2(3) = ny; jend2(3) = ny
+  !--- Contact line 4, between tile 1 (SOUTH) and tile 6 (NORTH)
+  tile1(4) = 1; tile2(4) = 6
+  istart1(4) = 1;  iend1(4) = nx; jstart1(4) = 1;  jend1(4) = 1
+  istart2(4) = 1;  iend2(4) = nx; jstart2(4) = ny; jend2(4) = ny
+  !--- Contact line 5, between tile 2 (NORTH) and tile 3 (SOUTH)
+  tile1(5) = 2; tile2(5) = 3
+  istart1(5) = 1;  iend1(5) = nx; jstart1(5) = ny; jend1(5) = ny
+  istart2(5) = 1;  iend2(5) = nx; jstart2(5) = 1;  jend2(5) = 1
+  !--- Contact line 6, between tile 2 (EAST) and tile 4 (SOUTH)
+  tile1(6) = 2; tile2(6) = 4
+  istart1(6) = nx; iend1(6) = nx; jstart1(6) = 1;  jend1(6) = ny
+  istart2(6) = nx; iend2(6) = 1;  jstart2(6) = 1;  jend2(6) = 1
+  !--- Contact line 7, between tile 2 (SOUTH) and tile 6 (EAST)
+  tile1(7) = 2; tile2(7) = 6
+  istart1(7) = 1;  iend1(7) = nx; jstart1(7) = 1;  jend1(7) = 1
+  istart2(7) = nx; iend2(7) = nx; jstart2(7) = ny; jend2(7) = 1
+  !--- Contact line 8, between tile 3 (EAST) and tile 4 (WEST)
+  tile1(8) = 3; tile2(8) = 4
+  istart1(8) = nx; iend1(8) = nx; jstart1(8) = 1;  jend1(8) = ny
+  istart2(8) = 1;  iend2(8) = 1;  jstart2(8) = 1;  jend2(8) = ny
+  !--- Contact line 9, between tile 3 (NORTH) and tile 5 (WEST)
+  tile1(9) = 3; tile2(9) = 5
+  istart1(9) = 1;  iend1(9) = nx; jstart1(9) = ny; jend1(9) = ny
+  istart2(9) = 1;  iend2(9) = 1;  jstart2(9) = ny; jend2(9) = 1
+  !--- Contact line 10, between tile 4 (NORTH) and tile 5 (SOUTH)
+  tile1(10) = 4; tile2(10) = 5
+  istart1(10) = 1;  iend1(10) = nx; jstart1(10) = ny; jend1(10) = ny
+  istart2(10) = 1;  iend2(10) = nx; jstart2(10) = 1;  jend2(10) = 1
+  !--- Contact line 11, between tile 4 (EAST) and tile 6 (SOUTH)
+  tile1(11) = 4; tile2(11) = 6
+  istart1(11) = nx; iend1(11) = nx; jstart1(11) = 1;  jend1(11) = ny
+  istart2(11) = nx; iend2(11) = 1;  jstart2(11) = 1;  jend2(11) = 1
+  !--- Contact line 12, between tile 5 (EAST) and tile 6 (WEST)
+  tile1(12) = 5; tile2(12) = 6
+  istart1(12) = nx; iend1(12) = nx; jstart1(12) = 1;  jend1(12) = ny
+  istart2(12) = 1;  iend2(12) = 1;  jstart2(12) = 1;  jend2(12) = ny
+
+  !--- mpp define mosaic
+  call mpp_define_mosaic( &
+      global_indices, layout2D, domain, &
+      nregions, num_contact, &
+      tile1, tile2, &
+      istart1, iend1, jstart1, jend1, &
+      istart2, iend2, jstart2, jend2, &
+      pe_start=pe_start, pe_end=pe_end, symmetry=.true., &
+      shalo = 3, nhalo = 3, whalo = 3, ehalo = 3, &
+      name = "cube")
+
+    tile = (mpp_pe()-pelist(1))/npes_per_tile+1 
+
+    !--- set dimensions
+    call mpp_get_compute_domain( domain, is,  ie,  js,  je  )
+    call mpp_get_data_domain   ( domain, isd, ied, jsd, jed )
+
+  end subroutine chtholly_define_cube
+end module Chtholly_c_wrapper

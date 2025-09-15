@@ -1,0 +1,29 @@
+# FMS CMake配置文件
+# 此文件由FMS的CMake构建系统生成
+
+@PACKAGE_INIT@
+
+# 包含目标文件
+include("${CMAKE_CURRENT_LIST_DIR}/FMSTargets.cmake")
+
+# 设置FMS的包含目录
+set(FMS_INCLUDE_DIRS "@PACKAGE_INCLUDE_INSTALL_DIR@")
+
+# 设置FMS的库目录
+set(FMS_LIBRARY_DIRS "@PACKAGE_LIB_INSTALL_DIR@")
+
+# 设置FMS的模块目录
+set(FMS_MODULE_DIRS "@PACKAGE_INCLUDE_INSTALL_DIR@")
+
+# 检查所有必需组件
+include(CMakePackageConfigHelpers)
+check_required_components(FMS)
+
+# 设置FMS的版本信息
+set(FMS_VERSION "@PACKAGE_VERSION@")
+set(FMS_VERSION_MAJOR "@PACKAGE_VERSION_MAJOR@")
+set(FMS_VERSION_MINOR "@PACKAGE_VERSION_MINOR@")
+set(FMS_VERSION_PATCH "@PACKAGE_VERSION_PATCH@")
+
+# 导出FMS的变量
+set(FMS_FOUND TRUE)
