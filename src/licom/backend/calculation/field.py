@@ -6,26 +6,16 @@ Description: Field class for creating arrays with different backends (JAX, NumPy
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
 Updated: 2025-09-04 (Chtholly: add classmethod allocate and deallocate)
+Updated: 2025-09-16 (Chtholly: optimization)
     
 """
 
 # Standard library imports
 from dataclasses import dataclass
 from typing import Any
-from typing import NamedTuple
 
 # Local application imports
-from datatype import MpDomain
-
-# BackendConfig
-BackendConfig = NamedTuple(
-    'BackendConfig',
-    [
-        ('platform', str), # Target platform: 'cpu' or 'gpu'
-        ('lib', str),      # Backend library: 'jax' or 'numpy'
-        ('precision', str) # Data precision for arrays: 'single' or 'double'
-    ]
-)
+from datatype import MpDate
 
 @dataclass(slots=True)
 class Field:
@@ -38,9 +28,9 @@ class Field:
     dtype: Any
 
     @classmethod
-    def init(cls, config: BackendConfig, mp: MpDomain) -> None:
+    def init(cls, mp: MpDate) -> None:
         """
-        Initialize the Field class with the given configuration and MP configuration.
+        Initialize the Field class with the given MP configuration.
         """
         # Initialize shape configurations
         cls._shape = {
@@ -66,86 +56,69 @@ class Field:
         # Initialize creation configuration
         cls._create_inf = {}
 
-        cls._setup_backend = lambda cfg: cls._setup_jax_backend(cfg) if cfg.lib == 'jax' else cls._setup_numpy_backend(cfg)
-        cls._setup_backend(config)
-
+        (lambda cfg: cls._setup_jax_backend(cfg) if cfg.lib == 'jax' else \
+            cls._setup_numpy_backend(cfg))(mp)
+        return None
 
     @classmethod
-    def _setup_jax_backend(cls, config: BackendConfig) -> None:
+    def _setup_jax_backend(cls, mp: MpDate) -> None:
         """Setup JAX backend with appropriate device configuration."""
         import jax
 
-        cls.dtype = jax.numpy.float64 if config.precision == 'double' else jax.numpy.float32
-        cls._create_inf = {'dtype': cls.dtype}
-        if config.platform == 'cpu':
-            cls._create_inf.update({'device': jax.devices("cpu")[0]})
-        elif config.platform == 'gpu':
-            cls._create_inf.update({'device': jax.devices("gpu")[0]})
+        # Utilize precision
+        (lambda precision: cls._create_inf.update({'dtype': jax.numpy.float64 \
+            if precision == 'double' else jax.numpy.float32}))(mp.precision)
+
+        # Utilize platform
+        (lambda: cls._create_inf.update({'device': jax.devices(mp.platform)[0]}))()
         
-        # Apply JIT compilation
-        cls._set = jax.jit(lambda arr, idx, value: arr.at[idx].set(value))
-        
-        # Use lambda functions for array creation
+        # Use lambda functions for array creation with JIT compilation
         cls._new = lambda c, shape: jax.numpy.zeros(c._shape[shape], **c._create_inf)
         cls._array = lambda c, arr: jax.numpy.array(arr, **c._create_inf)
-
+        cls._set = jax.jit(lambda arr, idx, value: arr.at[idx].set(value))
+        return None
+        
     @classmethod
-    def _setup_numpy_backend(cls, config: BackendConfig) -> None:
+    def _setup_numpy_backend(cls, mp: MpDate) -> None:
         """Setup NumPy backend for array creation."""
         import numpy
-        
-        cls.dtype = numpy.float64 if config.precision == 'double' else numpy.float32
-        cls._create_inf = {'dtype': cls.dtype}
+            
+        # Utilize precision
+        (lambda precision: cls._create_inf.update({'dtype': numpy.float64 \
+            if precision == 'double' else numpy.float32}))(mp.precision)
 
         # Use lambda functions for array creation
         cls._new = lambda c, shape: numpy.zeros(c._shape[shape], **c._create_inf)
         cls._array = lambda c, arr: numpy.array(arr, **c._create_inf)
         cls._set = lambda arr, idx, value: (arr.__setitem__(idx, value), arr)[1]
+        return None
 
     @classmethod
     def new(cls, shape: int):
-        """
-        Create a new zero array with specified shape.
-        """
+        """Create a new zero array with specified shape."""
         return cls._new(cls, shape)
     
     @classmethod
     def array(cls, arr):
-        """
-        Convert input to array with specified backend.
-        """
+        """Convert input to array with specified backend (no error checking)."""
         return cls._array(cls, arr)
 
     @classmethod
     def set_(cls, arr, idx, value):
-        """
-        Set value at specified index.
-        """
+        """Set value at specified index."""
         return cls._set(arr, idx, value)
 
 
     # High-level Encapsulation
-    @classmethod
-    def allocate(cls, owner: Any, field_groups: dict) -> None:
-        """
-        Allocate and attach arrays to an owner object based on a mapping of
-        shape-key -> list[field_names]. The shape-key must exist in Field._shape.
-        """
-        for shape_key, names in field_groups.items():
-            if not names:
-                continue
-            for name in names:
-                setattr(owner, name, cls.new(shape_key))
 
-    @classmethod
-    def deallocate(cls, owner: Any, field_groups: dict) -> None:
-        """
-        Delete previously attached arrays from an owner object using the same
-        mapping that was passed to allocate().
-        """
-        for _, names in field_groups.items():
-            if not names:
-                continue
-            for name in names:
-                if hasattr(owner, name):
-                    delattr(owner, name)
+    # Allocate fields
+    allocate = lambda cls, owner, field_groups: \
+        [setattr(owner, name, cls.new(shape_key)) \
+            for shape_key, names in field_groups.items() \
+                if names for name in names] 
+
+    # Deallocate fields
+    deallocate = lambda cls, owner, field_groups: \
+        [delattr(owner, name) \
+            for _, names in field_groups.items() \
+                if names for name in names if hasattr(owner, name)]

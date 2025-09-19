@@ -11,11 +11,17 @@ AM_CPPFLAGS += -I${top_builddir}/fms
 noinst_LTLIBRARIES = libchtholly.la
 
 # The convenience library depends on its source.
-libchtholly_la_SOURCES = wrapper.F90
+libchtholly_la_SOURCES = chtholly_wrapper.F90 \
+    chtholly_get_data.F90\
+    chtholly_get_global_grid.F90
 
 # Mod file depends on its o file, is built and then installed.
-chtholly_c_rapper_mod.mod: wrapper.$(OBJEXT)
-BUILT_SOURCES = chtholly_c_rapper_mod.mod
-include_HEADERS = chtholly_c_rapper_mod.mod
+chtholly_c_wrapper_mod.mod: chtholly_wrapper.$(OBJEXT)
+BUILT_SOURCES = chtholly_c_wrapper_mod.mod \
+    chtholly_get_data_mod.mod\
+    chtholly_get_global_grid.mod
+include_HEADERS = chtholly_c_wrapper_mod.mod
+    chtholly_get_data_mod.mod\
+    chtholly_get_global_grid.mod
 
 CLEANFILES = *.mod

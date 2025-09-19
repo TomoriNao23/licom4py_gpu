@@ -1,1 +1,11 @@
-from .mp_data import MpConfig, MpDomain
+"""
+File: __init__.py
+Description: Data structures for MPP (Massively Parallel Processing) configuration
+    and domain information used in the cubed-sphere mosaic.
+
+Author: Chtholly <mengleshan@mail.iap.ac.cn>
+Created: 2025-09-03
+Updated: 2025-09-16
+"""
+from .mp_data import MpDate
+from .duogrid_data import DuogridData

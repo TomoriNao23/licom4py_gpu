@@ -5,30 +5,15 @@ Description: Data structures for MPP (Massively Parallel Processing) configurati
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
-Updated: 2025-09-11
+Updated: 2025-09-16
 """
 # Standard library imports
-from typing import NamedTuple, Tuple
+from typing import NamedTuple
 
-# MpConfig
-MpConfig = NamedTuple(
-    'MpConfig',
-    [
-        ('nx', int),
-        ('ny', int),
-        ('npes_x', int),
-        ('npes_y', int),
-        ('io_layout', Tuple[int, int]),
-        ('ntiles', int),
-        ('halo', int),
-        ('npz', int)
-    ]
-)
-
-# MpDomain
+# MpDate
 # 'ie' is the physical index of the domain
-MpDomain = NamedTuple(
-    'MpDomain',
+MpDate = NamedTuple(
+    'MpDate',
     [
         ('tile', int),
         ('nx', int),
@@ -43,5 +28,11 @@ MpDomain = NamedTuple(
         ('jed', int),
         ('npz', int), 
         ('ng', int),
+        ('pe', int),
+        ('xsize', int),
+        ('ysize', int),
+        ('platform', str), # Target platform: 'cpu' or 'gpu'
+        ('lib', str),      # Backend library: 'jax' or 'numpy'
+        ('precision', str) # Data precision for arrays: 'single' or 'double'
     ]
 )

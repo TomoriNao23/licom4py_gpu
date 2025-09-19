@@ -5,15 +5,13 @@ Description: Main namelist configuration class for LICOM model, defining
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
-Updated: 2025-09-04
+Updated: 2025-09-16
 """
 # Standard library imports
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
 # Local application imports
-from datatype import MpConfig
-from backend.calculation.field import BackendConfig
 from .time_data import TimeConfig
 from .loader import LoaderMixin
 from .post_init import namelist_post_init
@@ -53,5 +51,3 @@ class Namelist(TimeConfig, LoaderMixin):
     _io_layout: Tuple[int, int] = field(init=False, repr=False)
     _total_baroclinic_steps: int = field(init=False, repr=True)
     _total_barotropic_steps: int = field(init=False, repr=True)
-    _mp_cfg: MpConfig = field(init=False, repr=False)
-    _backend_cfg: BackendConfig = field(init=False, repr=False)

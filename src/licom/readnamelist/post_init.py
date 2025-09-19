@@ -5,14 +5,12 @@ Description: Decorators for handling __post_init__ logic in configuration classe
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
-Updated: 2025-09-04
+Updated: 2025-09-16
 """
 # Standard library imports
 from datetime import datetime
 
 # Local application imports
-from datatype import MpConfig
-from backend.calculation.field import BackendConfig
 from .timemanager import TimeManager
 
 def time_config_post_init(cls):
@@ -74,21 +72,6 @@ def namelist_post_init(cls):
         object.__setattr__(self, "_total_barotropic_steps",
                            int(self._total_integration_seconds / self.barotropic_dt))
         object.__setattr__(self, "_io_layout", (self.io_x, self.io_y))
-        object.__setattr__(self, "_mp_cfg", MpConfig(
-            nx=self.nx,
-            ny=self.ny,
-            halo=self.halo,
-            npes_x=self.npes_x,
-            npes_y=self.npes_y,
-            io_layout=self._io_layout,
-            ntiles=6,
-            npz=self.npz,
-        ))
-        object.__setattr__(self, "_backend_cfg", BackendConfig(
-            platform=self.platform,
-            precision=self.precision,
-            lib=self.lib,
-        ))
         
         # 4. If there's an original __post_init__, execute it too
         if original_post_init is not None and original_post_init != enhanced_post_init:

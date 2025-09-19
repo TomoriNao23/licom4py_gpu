@@ -10,35 +10,38 @@ module Chtholly_c_wrapper
   use mpp_domains_mod,    only: mpp_domains_init
   use mpp_domains_mod,    only: mpp_define_mosaic
   use mpp_domains_mod,    only: mpp_get_compute_domain, mpp_get_data_domain
+  use mpp_domains_mod,    only: mpp_update_domains
 
 implicit none
 
-public :: chtholly_init, chtholly_end
+public :: fmsinit, fmsend, ext_scalar_2d
 
 type(domain2d),public :: domain
 integer, allocatable, dimension(:),public :: pelist
+
 integer, public :: isd, ied, jsd, jed
 integer, public :: is, ie, js, je
+integer, public :: xsize, ysize
 integer :: tile
 
 
 contains
-  subroutine chtholly_init() bind(C, name="chtholly_init")
+  subroutine fmsinit() bind(C, name="chtholly_init")
     implicit none
     call fms_init()
     allocate ( pelist(mpp_npes()) )
     call mpp_get_current_pelist(pelist)
     call mpp_domains_init(MPP_DOMAIN_TIME)
-    call chtholly_define_cube()
-  end subroutine chtholly_init
+    call define_cube()
+  end subroutine
 
-  subroutine chtholly_end() bind(C, name="chtholly_end")
+  subroutine fmsend() bind(C, name="chtholly_end")
     implicit none
     deallocate ( pelist )
     call fms_end()
-  end subroutine chtholly_end
+  end subroutine
 
-  subroutine chtholly_define_cube()
+  subroutine define_cube()
     implicit none
 
     integer, parameter :: num_contact = 12, nregions = 6
@@ -131,6 +134,26 @@ contains
     !--- set dimensions
     call mpp_get_compute_domain( domain, is,  ie,  js,  je  )
     call mpp_get_data_domain   ( domain, isd, ied, jsd, jed )
+    xsize = ied - isd + 1
+    ysize = jed - jsd + 1
+  end subroutine
 
-  end subroutine chtholly_define_cube
+  subroutine ext_scalar_2d(field) bind(C, name="chtholly_ext_scalar_2d")
+    use iso_c_binding, only: c_double
+    implicit none
+    real(c_double), intent(inout) :: field(*)
+    real(c_double), allocatable :: field_2d(:,:)
+
+    ! Reshape the 1D array to 2D with Fortran ordering
+    allocate(field_2d(xsize, ysize))
+    field_2d = transpose(reshape(field(1:xsize*ysize), [ysize, xsize]))
+
+    call mpp_update_domains(field_2d, domain)
+
+    ! Copy back to 1D array
+    field(1:xsize*ysize) = reshape(transpose(field_2d), [xsize*ysize])
+    deallocate(field_2d)
+
+  end subroutine ext_scalar_2d
+
 end module Chtholly_c_wrapper
