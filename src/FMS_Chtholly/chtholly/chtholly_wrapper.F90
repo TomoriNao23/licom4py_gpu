@@ -11,10 +11,11 @@ module Chtholly_c_wrapper
   use mpp_domains_mod,    only: mpp_define_mosaic
   use mpp_domains_mod,    only: mpp_get_compute_domain, mpp_get_data_domain
   use mpp_domains_mod,    only: mpp_update_domains
+  use mpp_domains_mod,    only: CGRID_NE, mpp_get_boundary
 
 implicit none
 
-public :: fmsinit, fmsend, ext_scalar_2d
+public :: fmsinit, fmsend, ext_scalar_2d, communication2d
 
 type(domain2d),public :: domain
 integer, allocatable, dimension(:),public :: pelist
@@ -22,17 +23,31 @@ integer, allocatable, dimension(:),public :: pelist
 integer, public :: isd, ied, jsd, jed
 integer, public :: is, ie, js, je
 integer, public :: xsize, ysize
+integer, public :: npx, npy
 integer :: tile
 
 
 contains
-  subroutine fmsinit() bind(C, name="chtholly_init")
+  subroutine fmsinit(nx,ny,layout1,layout2) bind(C, name="chtholly_init")
+    use iso_c_binding, only: c_int
     implicit none
+    integer(c_int), value :: nx
+    integer(c_int), value :: ny
+    integer(c_int), value :: layout1
+    integer(c_int), value :: layout2
     call fms_init()
     allocate ( pelist(mpp_npes()) )
     call mpp_get_current_pelist(pelist)
     call mpp_domains_init(MPP_DOMAIN_TIME)
-    call define_cube()
+    ! Only print from the main process to avoid MPI output conflicts
+    call define_cube(                             &
+                     int(nx,kind=kind(isd)),      &
+                     int(ny,kind=kind(isd)),      &
+                     int(layout1,kind=kind(isd)), &
+                     int(layout2,kind=kind(isd))  &
+                    )
+    npx = nx + 1
+    npy = ny + 1
   end subroutine
 
   subroutine fmsend() bind(C, name="chtholly_end")
@@ -41,9 +56,9 @@ contains
     call fms_end()
   end subroutine
 
-  subroutine define_cube()
+  subroutine define_cube(nx,ny,layout1,layout2)
     implicit none
-
+    integer,intent(in) :: nx, ny, layout1, layout2
     integer, parameter :: num_contact = 12, nregions = 6
     integer, dimension(nregions)    :: pe_start, pe_end
     integer, dimension(num_contact) :: &
@@ -53,14 +68,11 @@ contains
     integer, dimension(2,nregions)  :: layout2D
     integer, dimension(4,nregions)  :: global_indices
     integer :: npes_per_tile
-
-    integer :: nx, ny, ng, n
+    integer :: ng, n
     integer :: layout(2)
 
-    nx = 96
-    ny = 96
     ng  = 3
-    layout=[1,2]
+    layout=[layout1,layout2]
     npes_per_tile = layout(1)*layout(2)
 
     do n = 1, nregions
@@ -155,5 +167,45 @@ contains
     deallocate(field_2d)
 
   end subroutine ext_scalar_2d
+
+  subroutine communication2d(field1,field2) bind(C, name="chtholly_communication2d")
+    !> @brief Boundary Communication of the Flux
+
+    !import
+      use iso_c_binding, only: c_double
+      implicit none
+      real(c_double), intent(inout) :: field1(*), field2(*)
+      real(c_double), dimension(:,:), allocatable :: flux_xx, flux_yy
+      real(c_double), dimension(:,:), allocatable :: flux_x, flux_y
+      real(c_double), dimension(:), allocatable :: wbuffer, ebuffer, sbuffer, nbuffer
+    !alloca()
+      allocate(flux_xx(isd:ied,jsd:jed))
+      allocate(flux_yy(isd:ied,jsd:jed))
+      allocate(flux_x(isd:ied+1,jsd:jed))
+      allocate(flux_y(isd:ied,jsd:jed+1))
+      allocate (sbuffer(npx+2),nbuffer(npx+2),wbuffer(npy+2),ebuffer(npy+2))
+      flux_x = 0
+      flux_y = 0
+    !cal
+      flux_xx = transpose(reshape(field1(1:xsize*ysize), [ysize, xsize]))
+      flux_yy = transpose(reshape(field2(1:xsize*ysize), [ysize, xsize]))
+      flux_x(isd:ied,jsd:jed) = flux_xx(isd:ied,jsd:jed)
+      flux_y(isd:ied,jsd:jed) = flux_yy(isd:ied,jsd:jed)
+    !update the boundary
+      call mpp_get_boundary(flux_x, flux_y, domain, wbufferx=wbuffer, &
+          ebufferx=ebuffer, sbuffery=sbuffer, nbuffery=nbuffer, gridtype=CGRID_NE)
+      flux_y(is:ie,js)   = 0.5*(flux_y(is:ie,js)   + sbuffer(1:ie-is+1))
+      flux_y(is:ie,je+1) = 0.5*(flux_y(is:ie,je+1) + nbuffer(1:ie-is+1))    
+      flux_x(is,js:je)   = 0.5*(flux_x(is,js:je)   + wbuffer(1:je-js+1))
+      flux_x(ie+1,js:je) = 0.5*(flux_x(ie+1,js:je) + ebuffer(1:je-js+1))
+    !reshape
+      flux_xx(isd:ied,jsd:jed) = flux_x(isd:ied,jsd:jed)
+      flux_yy(isd:ied,jsd:jed) = flux_y(isd:ied,jsd:jed)
+      field1(1:xsize*ysize) = reshape(transpose(flux_xx), [xsize*ysize])
+      field2(1:xsize*ysize) = reshape(transpose(flux_yy), [xsize*ysize])
+    !dealloca()
+      deallocate(flux_x,flux_y,flux_xx,flux_yy,sbuffer,nbuffer,wbuffer,ebuffer)
+      
+  end subroutine
 
 end module Chtholly_c_wrapper

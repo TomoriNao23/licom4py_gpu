@@ -15,7 +15,7 @@ extern "C" {
  * 
  * @note This function is thread-safe and should be called once per process
  */
-void chtholly_init(void);
+void chtholly_init(int nx, int ny, int layout1, int layout2);
 
 /**
  * @brief Finalize the Chtholly FMS wrapper
@@ -115,6 +115,13 @@ int chtholly_get_ied(void);
  * This function gets the jsd from the Chtholly FMS wrapper.
  */
 int chtholly_get_jsd(void);
+
+/**
+ * @brief Get the jed
+ * 
+ * This function gets the jed from the Chtholly FMS wrapper.
+ */
+int chtholly_get_jed(void);
 
 #ifdef __cplusplus
 }

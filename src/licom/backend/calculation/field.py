@@ -6,7 +6,7 @@ Description: Field class for creating arrays with different backends (JAX, NumPy
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
 Updated: 2025-09-04 (Chtholly: add classmethod allocate and deallocate)
-Updated: 2025-09-16 (Chtholly: optimization)
+Updated: 2025-09-16 (Chtholly: optimization and backend separation)
     
 """
 
@@ -16,6 +16,8 @@ from typing import Any
 
 # Local application imports
 from datatype import MpDate
+from . import jax as jax_backend
+from . import numpy as numpy_backend
 
 @dataclass(slots=True)
 class Field:
@@ -25,7 +27,7 @@ class Field:
     
     _create_inf: dict
     _shape: dict
-    dtype: Any
+    datatype: Any
 
     @classmethod
     def init(cls, mp: MpDate) -> None:
@@ -56,42 +58,10 @@ class Field:
         # Initialize creation configuration
         cls._create_inf = {}
 
-        (lambda cfg: cls._setup_jax_backend(cfg) if cfg.lib == 'jax' else \
-            cls._setup_numpy_backend(cfg))(mp)
+        (lambda cfg: jax_backend.setup_jax_backend(cls, cfg) if cfg.lib == 'jax' else \
+            numpy_backend.setup_numpy_backend(cls, cfg))(mp)
         return None
 
-    @classmethod
-    def _setup_jax_backend(cls, mp: MpDate) -> None:
-        """Setup JAX backend with appropriate device configuration."""
-        import jax
-
-        # Utilize precision
-        (lambda precision: cls._create_inf.update({'dtype': jax.numpy.float64 \
-            if precision == 'double' else jax.numpy.float32}))(mp.precision)
-
-        # Utilize platform
-        (lambda: cls._create_inf.update({'device': jax.devices(mp.platform)[0]}))()
-        
-        # Use lambda functions for array creation with JIT compilation
-        cls._new = lambda c, shape: jax.numpy.zeros(c._shape[shape], **c._create_inf)
-        cls._array = lambda c, arr: jax.numpy.array(arr, **c._create_inf)
-        cls._set = jax.jit(lambda arr, idx, value: arr.at[idx].set(value))
-        return None
-        
-    @classmethod
-    def _setup_numpy_backend(cls, mp: MpDate) -> None:
-        """Setup NumPy backend for array creation."""
-        import numpy
-            
-        # Utilize precision
-        (lambda precision: cls._create_inf.update({'dtype': numpy.float64 \
-            if precision == 'double' else numpy.float32}))(mp.precision)
-
-        # Use lambda functions for array creation
-        cls._new = lambda c, shape: numpy.zeros(c._shape[shape], **c._create_inf)
-        cls._array = lambda c, arr: numpy.array(arr, **c._create_inf)
-        cls._set = lambda arr, idx, value: (arr.__setitem__(idx, value), arr)[1]
-        return None
 
     @classmethod
     def new(cls, shape: int):
@@ -102,12 +72,6 @@ class Field:
     def array(cls, arr):
         """Convert input to array with specified backend (no error checking)."""
         return cls._array(cls, arr)
-
-    @classmethod
-    def set_(cls, arr, idx, value):
-        """Set value at specified index."""
-        return cls._set(arr, idx, value)
-
 
     # High-level Encapsulation
 

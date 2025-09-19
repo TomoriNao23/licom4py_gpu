@@ -5,10 +5,8 @@ Description: Duogrid data structure for grid management in LICOM ocean model.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-04
-Updated: 2025-09-16
+Updated: 2025-09-19 (Chtholly add inner and outer masks)
 """
-# Standard library imports
-from dataclasses import dataclass
 
 # Third-party imports
 import numpy as np
@@ -17,8 +15,10 @@ import numpy as np
 from backend.calculation.field import Field
 from datatype import MpDate
 from ._c_duogrid_function import duogrid_c_method
+from .duogrid_cal import duogrid_cal
 
 @duogrid_c_method
+@duogrid_cal
 class Duogrid:
     """
     Duogrid data structure for grid management in LICOM ocean model.
@@ -27,8 +27,11 @@ class Duogrid:
     """
     
     # Class variables to store grid data
+    # mp class
     mp : MpDate
-    _map : dict
+    # calculation fields
+    inner : Field.datatype
+    outer : Field.datatype
     
     @classmethod
     def init(cls, mp: MpDate) -> 'Duogrid':
@@ -47,6 +50,10 @@ class Duogrid:
             "jsd": mp.jsd, "jed": mp.jed, 
             "tile": mp.tile, "grid_type": 2}
         cls._init_from_cfms_global_grid()
+        
+        # Initialize calculation fields using decorator
+        cls.init_calculations()
+        
         return cls
 
     @classmethod

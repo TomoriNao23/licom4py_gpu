@@ -39,19 +39,6 @@ class Initial:
         # duogrid init
         Dg.init(FMS_chtholly.mp)
 
-        a = Field.new('2d')
-        for i in range(Dg.mp.xsize):
-            for j in range(Dg.mp.ysize):
-                #a[i,j] = self.mp.tile*100 + (i-2) + (j-2)*0.01
-                a=Field.set_(a,(i,j), Dg.mp.tile*10000 + (i+Dg.mp.isd)*100 + (j+Dg.mp.jsd))
-        a = FMS_chtholly.ext_scalar(a)
-        print("cpu", Dg.mp.pe, "sum", f"{np.sum(a):.8f}") if (Dg.mp.pe == 6) else None
-        if Dg.mp.pe == 6:
-            for j in range(Dg.mp.ysize):
-                for i in range(Dg.mp.xsize):
-                    print("i=",Dg.mp.isd+i, "j=",Dg.mp.jsd+j, a[i,j])
-        a = Field.new('2d')
-
     def __del__(self):
         """
         Destructor: automatically called when the object is about to be destroyed.
@@ -59,40 +46,27 @@ class Initial:
         """
         FMS_chtholly.end()
 
-        # a = np.zeros((Dg.mp.xsize, Dg.mp.ysize),dtype=np.float64)
-        # for i in range(Dg.mp.xsize):
-        #     for j in range(Dg.mp.ysize):
-        #         #a[i,j] = self.mp.tile*100 + (i-2) + (j-2)*0.01
-        #         a[i,j] = Dg.mp.tile*100 + (i+Dg.mp.isd) + (j+Dg.mp.jsd)*0.01
-        # a = FMS_chtholly.ext_scalar(a)
 
-        # a = Field.new('2d')
+        # u = Field.new('2d')
+        # v = Field.new('2d')
         # for i in range(Dg.mp.xsize):
         #     for j in range(Dg.mp.ysize):
         #         #a[i,j] = self.mp.tile*100 + (i-2) + (j-2)*0.01
-        #         a=Field.set_(a,(i,j), Dg.mp.tile*10000 + (i+Dg.mp.isd)*100 + (j+Dg.mp.jsd))
-        # a = FMS_chtholly.ext_scalar(a)
-        # print("cpu", Dg.mp.pe, "sum", f"{np.sum(a):.8f}") if (Dg.mp.pe == 6) else None
+        #         u=u.at[i,j].set(Dg.mp.tile*10000 + (i+Dg.mp.isd)*100 + (j+Dg.mp.jsd))
+        #         v=v.at[i,j].set((Dg.mp.tile*10000 + (i+Dg.mp.isd)*100 + (j+Dg.mp.jsd))*1.1)
+        # u, v = FMS_chtholly.ext_vector(u, v)
+        # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(u):.8f}") if (Dg.mp.pe == 6) else None
+        # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(v):.8f}") if (Dg.mp.pe == 6) else None
+        # u, v = FMS_chtholly.communication2d(u, v)
+        # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(u):.8f}") if (Dg.mp.pe == 6) else None
+        # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(v):.8f}") if (Dg.mp.pe == 6) else None
         # if Dg.mp.pe == 6:
         #     for j in range(Dg.mp.ysize):
         #         for i in range(Dg.mp.xsize):
-        #             print("i=",Dg.mp.isd+i, "j=",Dg.mp.jsd+j, a[i,j])
-         # a = Field.new('2d')
-
-
-        # # 方法2：使用 JAX 的 full_like 重新创建数组
-        # for i in range(Dg.mp.xsize):
-        #     for j in range(Dg.mp.ysize):
-        #         a = Field.set_(a,(i,j),Dg.mp.tile*10000 + (i+Dg.mp.isd)*100 + (j+Dg.mp.jsd))
-
-        # a = np.array(a)
-        # print(jnp.sum(a)) if (Dg.mp.pe == 6) else None
-        # for i in range(100000):
-        #      a = FMS_chtholly.ext_scalar(a)
-        # if (Dg.mp.pe == 6):
-        #     print(jnp.sum(a))
+        #             print("i=",Dg.mp.isd+i, "j=",Dg.mp.jsd+j, u[i,j])
+        # if Dg.mp.pe == 6:
         #     for j in range(Dg.mp.ysize):
         #         for i in range(Dg.mp.xsize):
-        #             print(i+Dg.mp.isd, j+Dg.mp.jsd, a[i,j])
+        #             print("i=",Dg.mp.isd+i, "j=",Dg.mp.jsd+j, Dg.inner[i,j])
 
 

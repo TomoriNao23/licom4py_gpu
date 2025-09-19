@@ -8,7 +8,6 @@ module c_global_grid_mod
 
   public :: chtholly_global_grid_init
   public :: chtholly_global_grid_end
-  ! removed unused dimension getters
   public :: chtholly_global_grid_get_a_pt_ext
   public :: chtholly_global_grid_get_a_x_dg
   public :: chtholly_global_grid_get_a_y_dg
@@ -57,7 +56,8 @@ contains
     integer(c_int), value :: ied
     integer(c_int), value :: jsd
     integer(c_int), value :: jed
-    call global_grid_init(gg, int(res, kind=kind(gg%res)), int(ng, kind=kind(gg%ng)), int(grid_type, &
+    call global_grid_init(gg, int(res, kind=kind(gg%res)), &
+    int(ng, kind=kind(gg%ng)), int(grid_type, &
     kind=kind(gg%grid_type)), int(tile, kind=kind(gg%tile)), &
     int(isd, kind=kind(gg%isd)), int(ied, kind=kind(gg%ied)), &
     int(jsd, kind=kind(gg%jsd)), int(jed, kind=kind(gg%jed)))

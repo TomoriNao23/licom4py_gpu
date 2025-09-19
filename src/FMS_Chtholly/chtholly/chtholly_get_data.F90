@@ -8,7 +8,7 @@ module Chtholly_get_data
   use Chtholly_c_wrapper, only: chtholly_init => fmsinit
   use Chtholly_c_wrapper, only: chtholly_end => fmsend
   use Chtholly_c_wrapper, only: chtholly_ext_scalar_2d => ext_scalar_2d
-
+  use Chtholly_c_wrapper, only: chtholly_communication2d => communication2d
   use iso_c_binding, only: c_int, c_double
 
   implicit none
@@ -27,7 +27,7 @@ module Chtholly_get_data
   public :: chtholly_get_ied
   public :: chtholly_get_jsd
   public :: chtholly_get_jed
-
+  public :: chtholly_communication2d
   contains
 
   ! Chtholly's functions
