@@ -164,7 +164,7 @@ use fms_io_mod, only : fms_io_init, fms_io_exit, field_size, &
                        get_mosaic_tile_file, get_global_att_value, file_exist, field_exist, &
                        write_version_number
 
-use memutils_mod, only: print_memuse_stats, memutils_init
+!use memutils_mod, only: print_memuse_stats, memutils_init
 
 
 implicit none
@@ -447,8 +447,8 @@ subroutine fms_init (localcomm )
       write (unit,*) 'nml_error_codes=', nml_error_codes(1:num_nml_error_codes)
     endif
 
-    call memutils_init( print_memory_usage )
-    call print_memuse_stats('fms_init')
+    !call memutils_init( print_memory_usage )
+    !call print_memuse_stats('fms_init')
 
 !--- output version information constants to the logfile
     call write_version_number("CONSTANTS_MOD", constants_version)

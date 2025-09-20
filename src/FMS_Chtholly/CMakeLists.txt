@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 project(FMS_Chtholly VERSION 1.0 LANGUAGES Fortran C)
 # Chtholly <mengleshan@mail.iap.ac.cn> 
 # Created: 2025.9.15
-# Updated: 2025.9.15
+# Updated: 2025.9.20 (set FMS_Chtholly the minimum_required)
 
 
 # Set Fortran compiler standard - use most permissive settings
@@ -82,6 +82,12 @@ if(MPI_FOUND)
   endif()
   if(MPI_Fortran_COMPILER)
     set(CMAKE_Fortran_COMPILER ${MPI_Fortran_COMPILER})
+  endif()
+  
+  # Set deployment target for MPI compilers to avoid version warnings
+  if(APPLE)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mmacosx-version-min=14.0")
+    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -mmacosx-version-min=14.0")
   endif()
 else()
   message(WARNING "MPI not found, proceeding without MPI support")
@@ -174,6 +180,14 @@ endif()
 # Detect operating system
 if(APPLE)
   add_definitions(-D__APPLE__)
+  # Set macOS deployment target to avoid version warnings
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum OS X deployment version")
+  # Let CMake find the correct SDK automatically
+  execute_process(COMMAND xcrun --show-sdk-path OUTPUT_VARIABLE MACOS_SDK_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if(MACOS_SDK_PATH)
+    set(CMAKE_OSX_SYSROOT ${MACOS_SDK_PATH})
+    message(STATUS "Using macOS SDK: ${MACOS_SDK_PATH}")
+  endif()
 endif()
 
 # Detect CRAY system
@@ -192,39 +206,9 @@ file(GLOB_RECURSE FMS_SOURCES
   "platform/*.F90"
   "mpp/*.F90"
   "mpp/*.c"
-  "memutils/*.F90"
-  "memutils/*.c"
   "fms/*.F90"
-  "libFMS/*.F90"
-  "diag_manager/*.F90"
-  "field_manager/*.F90"
-  "global_grid/*.F90"
-  "mosaic/*.F90"
-  "mosaic/*.c"
-  "mosaic/*.h"
-  "time_manager/*.F90"
-  "horiz_interp/*.F90"
-  "interpolator/*.F90"
-  "tracer_manager/*.F90"
-  "topography/*.F90"
-  "sat_vapor_pres/*.F90"
-  "random_numbers/*.F90"
-  "oda_tools/*.F90"
-  "oda_tools/*.f90"
-  "station_data/*.F90"
-  "time_interp/*.F90"
-  "tridiagonal/*.F90"
-  "monin_obukhov/*.F90"
-  "column_diagnostics/*.F90"
-  "data_override/*.F90"
-  "coupler/*.F90"
-  "exchange/*.F90"
-  "fft/*.F90"
-  "drifters/*.F90"
-  "astronomy/*.F90"
-  "axis_utils/*.F90"
-  "block_control/*.F90"
-  "amip_interp/*.F90"
+  "chtholly/global_grid/*.F90"
+  "chtholly/*.F90"
 )
 
 # Add chtholly source files after mpp (for dependency order)
@@ -236,9 +220,6 @@ set(FMS_ALL_SOURCES ${FMS_SOURCES} ${CHTHOLLY_SOURCES})
 # Add C source files
 file(GLOB_RECURSE FMS_C_SOURCES
   "mpp/*.c"
-  "memutils/*.c"
-  "mosaic/*.c"
-  "mosaic/*.h"
 )
 
 # Merge all source files
@@ -246,22 +227,6 @@ set(FMS_ALL_SOURCES ${FMS_SOURCES} ${CHTHOLLY_SOURCES} ${FMS_C_SOURCES})
 
 # Add source files to unified library
 target_sources(fms_unified PRIVATE ${FMS_ALL_SOURCES})
-
-# Set compilation order - ensure dependency modules compile first
-set_source_files_properties(
-  "fft/fft99.F90"
-  PROPERTIES
-  OBJECT_OUTPUTS "${CMAKE_CURRENT_BINARY_DIR}/fft/fft99.F90.o"
-)
-
-set_source_files_properties(
-  "fft/fft.F90"
-  PROPERTIES
-  OBJECT_DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/fft/fft99.F90.o"
-)
-
-# Ensure chtholly modules compile after mpp modules
-# Note: CMake will automatically handle module dependencies
 
 # Set target properties
 set_target_properties(fms_unified PROPERTIES
@@ -331,15 +296,15 @@ endif()
 # Set C compiler options
 if(CMAKE_C_COMPILER_ID MATCHES "GNU")
   target_compile_options(fms_unified PRIVATE 
-    $<$<COMPILE_LANGUAGE:C>:-fPIC>
+    $<$<COMPILE_LANGUAGE:C>:-fPIC -w>
   )
 elseif(CMAKE_C_COMPILER_ID MATCHES "Clang")
   target_compile_options(fms_unified PRIVATE 
-    $<$<COMPILE_LANGUAGE:C>:-fPIC>
+    $<$<COMPILE_LANGUAGE:C>:-fPIC -w -Wno-overriding-deployment-version>
   )
 elseif(CMAKE_C_COMPILER_ID MATCHES "Intel")
   target_compile_options(fms_unified PRIVATE 
-    $<$<COMPILE_LANGUAGE:C>:-fPIC>
+    $<$<COMPILE_LANGUAGE:C>:-fPIC -w>
   )
 endif()
 
