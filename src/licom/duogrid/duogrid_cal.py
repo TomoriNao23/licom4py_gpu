@@ -35,17 +35,20 @@ def duogrid_cal(cls):
     
     @classmethod
     def _init_inner_outer_fields(cls):
-        """Initialize the inner and outer fields."""
+        """Initialize the inner and outer fields.
+        inner field: 0s on halo, 1s in interior
+        outer field: 1s on halo, 0s in interior
+        """
         
         ng = cls.mp.ng
-        # inner field: 0s on boundary, 1s in interior
+        # inner field: 0s on halo, 1s in interior
         cls.inner = Field.new('2d')
         cls.inner = cls.inner.at[:,:].set(0)
         sizex = cls.inner.shape[0]
         sizey = cls.inner.shape[1]
         cls.inner = cls.inner.at[ng:sizex-ng,ng:sizey-ng].set(1)
 
-        # outer field: 1s on boundary, 0s in interior  
+        # outer field: 1s on halo, 0s in interior  
         cls.outer = Field.new('2d')
         cls.outer = cls.outer.at[:,:].set(1)
         sizex = cls.outer.shape[0]

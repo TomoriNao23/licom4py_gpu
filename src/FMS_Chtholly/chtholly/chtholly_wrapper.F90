@@ -2,14 +2,16 @@ module Chtholly_c_wrapper
 
   use fms_mod,            only: fms_init, fms_end
 
-  use mpp_mod,            only: mpp_npes, mpp_get_current_pelist
-  use mpp_mod,            only: mpp_pe
+  use mpp_mod,            only: mpp_npes, mpp_pe
+  use mpp_mod,            only: mpp_get_current_pelist
   
   use mpp_domains_mod,    only: domain2d
   use mpp_domains_mod,    only: mpp_define_mosaic
-  use mpp_domains_mod,    only: mpp_get_compute_domain, mpp_get_data_domain
+  use mpp_domains_mod,    only: mpp_get_compute_domain 
+  use mpp_domains_mod,    only: mpp_get_data_domain
+  use mpp_domains_mod,    only: mpp_get_boundary
   use mpp_domains_mod,    only: mpp_update_domains
-  use mpp_domains_mod,    only: CGRID_NE, mpp_get_boundary
+  use mpp_domains_mod,    only: CGRID_NE
 
 implicit none
 
@@ -36,7 +38,6 @@ contains
     call fms_init()
     allocate ( pelist(mpp_npes()) )
     call mpp_get_current_pelist(pelist)
-    ! Only print from the main process to avoid MPI output conflicts
     call define_cube(                             &
                      int(nx,kind=kind(isd)),      &
                      int(ny,kind=kind(isd)),      &
