@@ -4,12 +4,13 @@ Description: Remapping functions for A-grid, C-grid and D-grid.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-20
-Updated: 2025-09-20
+Updated: 2025-09-21 (add upwind scheme)
 """
 
 # Third-party imports
 import jax
 import jax.numpy as jnp
+import functools
 
 # Standard library imports
 from typing import Tuple
@@ -17,8 +18,27 @@ from typing import Tuple
 # Local application imports
 from operators.poly import vector_interpolation_ew, vector_interpolation_ns
 from duogrid.duogrid import Duogrid as Dg
+from backend.cube_grid.use_mpp import FMS_chtholly
 
-@jax.jit
+@functools.partial(jax.jit, static_argnums=())
+def to_a_grid(u: jnp.ndarray, v: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Remap the boundary of the A-grid.
+    
+    Args:
+        u: velocity component [xsize, ysize]
+        v: velocity component [xsize, ysize]
+    """
+    uct = jnp.zeros_like(u).at[:,:].set(
+        (Dg.a_gct[..., 0, 0] * u + Dg.a_gct[..., 0, 1] * v) * Dg.a_sina
+    )
+    vct = jnp.zeros_like(v).at[:,:].set(
+        (Dg.a_gct[..., 1, 0] * u + Dg.a_gct[..., 1, 1] * v) * Dg.a_sina
+    )
+
+    return uct, vct
+
+@functools.partial(jax.jit, static_argnums=())
 def to_c_grid(u: jnp.ndarray, v: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """
     Remap the boundary of the C-grid.
@@ -34,21 +54,17 @@ def to_c_grid(u: jnp.ndarray, v: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]
     ue, uw = vector_interpolation_ew(u)  # East, West components
     un, us = vector_interpolation_ns(v)  # North, South components
 
-    xsize, ysize = Dg.mp.xsize, Dg.mp.ysize
-
-    # Initialize output arrays
-    uc = jnp.zeros_like(u)
-    vc = jnp.zeros_like(v)
-
-    # For uc in x-direction: average of east and west components
-    uc = uc.at[3:xsize-2, :].set(0.5 * (ue[2:xsize-3, :] + uw[3:xsize-2, :]))
-    
-    # For vc in y-direction: average of north and south components
-    vc = vc.at[:, 3:ysize-2].set(0.5 * (un[:, 2:ysize-3] + us[:, 3:ysize-2]))
+    # mean of eta(right,i+1) and eta(left,i-1)
+    uc = jnp.zeros_like(u).at[3:-2, :].set(
+        0.5 * (ue[2:-3, :] + uw[3:-2, :])
+        )
+    vc = jnp.zeros_like(v).at[:, 3:-2].set(
+        0.5 * (un[:, 2:-3] + us[:, 3:-2])
+        )
 
     return uc, vc
 
-@jax.jit
+@functools.partial(jax.jit, static_argnums=())
 def to_d_grid(u: jnp.ndarray, v: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """
     Remap the boundary of the D-grid.
@@ -64,21 +80,17 @@ def to_d_grid(u: jnp.ndarray, v: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]
     un, us = vector_interpolation_ns(u)  # North, South components
     ve, vw = vector_interpolation_ew(v)  # East, West components
 
-    xsize, ysize = Dg.mp.xsize, Dg.mp.ysize
-
-    # Initialize output arrays
-    ud = jnp.zeros_like(u)
-    vd = jnp.zeros_like(v)
-
-    # For vd in x-direction: average of east and west components
-    vd = vd.at[3:xsize-2, :].set(0.5 * (ve[2:xsize-3, :] + vw[3:xsize-2, :]))
-    
-    # For ud in y-direction: average of north and south components
-    ud = ud.at[:, 3:ysize-2].set(0.5 * (un[:, 2:ysize-3] + us[:, 3:ysize-2]))
+    # mean of eta(right,j+1) and eta(left,j-1)
+    ud = jnp.zeros_like(u).at[3:-2, :].set(
+        0.5 * (un[2:-3, :] + us[3:-2, :])
+        )
+    vd = jnp.zeros_like(v).at[:, 3:-2].set(
+        0.5 * (ve[:, 2:-3] + vw[:, 3:-2])
+        )
 
     return ud, vd
 
-@jax.jit
+@functools.partial(jax.jit, static_argnums=())
 def to_d_grid_upwind(u: jnp.ndarray, v: jnp.ndarray, 
                      uc: jnp.ndarray, vc: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """
@@ -97,27 +109,47 @@ def to_d_grid_upwind(u: jnp.ndarray, v: jnp.ndarray,
     un, us = vector_interpolation_ns(u)  # North, South components
     ve, vw = vector_interpolation_ew(v)  # East, West components
 
-    xsize, ysize = Dg.mp.xsize, Dg.mp.ysize
-
-    # Initialize output arrays
-    ud = jnp.zeros_like(u)
-    vd = jnp.zeros_like(v)
-
     # Upwind scheme selection
     # For vd in x-direction: select upwind component based on sign of uc
-    vd_upwind = jnp.where(
-        uc[3:xsize-2, :] > 0.0,  # If uc > 0, select west (upwind) component
-        ve[2:xsize-3, :],        # West component
-        vw[3:xsize-2, :],        # East component
+    vd = jnp.zeros_like(v).at[3:-2, :].set(
+        jnp.where(
+            uc[3:-2, :] > 0.0,  # If uc > 0, select west (upwind) component
+            ve[2:-3, :],        # West component
+            vw[3:-2, :],        # East component
+        )
     )
-    vd = vd.at[3:xsize-2, :].set(vd_upwind)
-
     # For ud in y-direction: select upwind component based on sign of vc
-    ud_upwind = jnp.where(
-        vc[:, 3:ysize-2] > 0.0,  # If vc > 0, select south (upwind) component
-        un[:, 2:ysize-3],        # South component
-        us[:, 3:ysize-2],        # North component
+    ud = jnp.zeros_like(u).at[:, 3:-2].set(    
+        jnp.where(
+            vc[:, 3:-2] > 0.0,  # If vc > 0, select south (upwind) component
+            un[:, 2:-3],        # South component
+            us[:, 3:-2],        # North component
+        )
     )
-    ud = ud.at[:, 3:ysize-2].set(ud_upwind)
-    
+
     return ud, vd
+
+def vector_trans_2d(u: jnp.ndarray, v: jnp.ndarray) \
+    -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """
+    Remap the boundary of the 2D vector.
+    
+    Args:
+        u: velocity component [xsize, ysize]
+        v: velocity component [xsize, ysize]
+
+    Returns:
+        tuple: (uct, vct, ub_cx, vb_cy, ub_cy, vb_cx) - 2D vector remapped velocities
+    """
+
+    # A-grid
+    uct, vct = to_a_grid(u, v)
+
+    # C-grid.communication
+    ub_cx, vb_cy = to_c_grid(uct, vct)
+    ub_cx, vb_cy = FMS_chtholly.communication2d(ub_cx, vb_cy)
+
+    # D-grid.upwind
+    ub_cy, vb_cx = to_d_grid_upwind(u, v, ub_cx, vb_cy)
+
+    return uct, vct, ub_cx, ub_cy, vb_cx, vb_cy

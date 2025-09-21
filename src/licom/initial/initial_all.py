@@ -13,12 +13,13 @@ import os
 
 
 # Local application imports
+from operators.agrid import agrid_vorticity, agrid_div, agrid_grad
 from readnamelist import Namelist
 from backend import FMS_chtholly
 from backend.calculation.field import Field
 from duogrid.duogrid import Duogrid as Dg
-from operators.poly import vector_interpolation_ew
-from operators.remap import to_c_grid, to_d_grid, to_d_grid_upwind
+from operators.poly import vector_interpolation_ew, scalar_interpolation_x, scalar_interpolation_y
+from operators.remap import to_c_grid, to_d_grid, to_d_grid_upwind, to_a_grid, vector_trans_2d
 
 import jax.numpy as jnp
 import numpy as np
@@ -58,15 +59,24 @@ class Initial:
         # Set the values using vectorized assignment
         u = u.at[:].set(u_values)
         v = v.at[:].set(v_values)
-        uc, vc = to_c_grid(u, v)
-        ud, vd = to_d_grid(u, v)
-        ud_upwind, vd_upwind = to_d_grid_upwind(u, v, uc, vc)
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(uc):.8f}") if (Dg.mp.pe == 6) else None
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vc):.8f}") if (Dg.mp.pe == 6) else None
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(ud):.8f}") if (Dg.mp.pe == 6) else None
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vd):.8f}") if (Dg.mp.pe == 6) else None
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(ud_upwind):.8f}") if (Dg.mp.pe == 6) else None
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vd_upwind):.8f}") if (Dg.mp.pe == 6) else None
+    
+        uct, vct, ub_cx, ub_cy, vb_cx, vb_cy = vector_trans_2d(u, v)
+
+        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(uct):.8f}") if (Dg.mp.pe == 6) else None
+        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vct):.8f}") if (Dg.mp.pe == 6) else None
+        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(ub_cx):.8f}") if (Dg.mp.pe == 6) else None
+        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vb_cy):.8f}") if (Dg.mp.pe == 6) else None
+        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(ub_cy):.8f}") if (Dg.mp.pe == 6) else None
+        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vb_cx):.8f}") if (Dg.mp.pe == 6) else None
+
+        vort = agrid_vorticity(v, u)
+        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vort):.16f}") if (Dg.mp.pe == 6) else None
+        div = agrid_div(u, v)
+        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(div):.16f}") if (Dg.mp.pe == 6) else None
+        gradx, grady = agrid_grad(u)
+        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(gradx):.16f}") if (Dg.mp.pe == 6) else None
+        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(grady):.16f}") if (Dg.mp.pe == 6) else None
+
     def __del__(self):
         """
         Destructor: automatically called when the object is about to be destroyed.
@@ -96,5 +106,3 @@ class Initial:
         #     for j in range(Dg.mp.ysize):
         #         for i in range(Dg.mp.xsize):
         #             print("i=",Dg.mp.isd+i, "j=",Dg.mp.jsd+j, Dg.inner[i,j])
-
-
