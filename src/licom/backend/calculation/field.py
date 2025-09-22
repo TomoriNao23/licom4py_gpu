@@ -13,7 +13,7 @@ Updated: 2025-09-16 (Chtholly: optimization and backend separation)
 
 # Standard library imports
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Dict
 
 
 # Local application imports
@@ -96,7 +96,7 @@ class Field:
     # High-level Encapsulation
     # Allocate fields
     @classmethod
-    def allocate(cls, owner, field_groups):
+    def allocate(cls, owner: Any, field_groups: Dict[str, Any]):
         """
         Batch allocate fields to the specified object.
         

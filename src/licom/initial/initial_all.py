@@ -13,6 +13,7 @@ import os
 
 
 # Local application imports
+from datatype import momentum_data
 from operators.agrid import agrid_vorticity, agrid_div, agrid_grad
 from readnamelist import Namelist
 from backend import FMS_chtholly
@@ -20,6 +21,7 @@ from backend.calculation.field import Field
 from duogrid.duogrid import Duogrid as Dg
 from operators.poly import vector_interpolation_ew, scalar_interpolation_x, scalar_interpolation_y
 from operators.remap import to_c_grid, to_d_grid, to_d_grid_upwind, to_a_grid, vector_trans_2d
+from momentum.momentum import Momentum
 
 import jax.numpy as jnp
 import numpy as np
@@ -42,40 +44,44 @@ class Initial:
         # duogrid init
         Dg.init(FMS_chtholly.mp)
 
-        u = Field.new('2d')
-        v = Field.new('2d')
-        
-        # Vectorized initialization using JAX broadcasting
-        i_indices = jnp.arange(Dg.mp.xsize) + Dg.mp.isd  # [0, 1, 2, ..., xsize-1] + isd
-        j_indices = jnp.arange(Dg.mp.ysize) + Dg.mp.jsd  # [0, 1, 2, ..., ysize-1] + jsd
-        
-        # Create meshgrid for broadcasting
-        i_grid, j_grid = jnp.meshgrid(i_indices, j_indices, indexing='ij')
-        
-        # Vectorized computation
-        u_values = Dg.mp.tile * 10000 + i_grid * 100 + j_grid
-        v_values = u_values * 1.1
-        
-        # Set the values using vectorized assignment
-        u = u.at[:].set(u_values)
-        v = v.at[:].set(v_values)
+        # momentum init
+        self.momentum = Momentum()
     
-        uct, vct, ub_cx, ub_cy, vb_cx, vb_cy = vector_trans_2d(u, v)
 
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(uct):.8f}") if (Dg.mp.pe == 6) else None
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vct):.8f}") if (Dg.mp.pe == 6) else None
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(ub_cx):.8f}") if (Dg.mp.pe == 6) else None
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vb_cy):.8f}") if (Dg.mp.pe == 6) else None
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(ub_cy):.8f}") if (Dg.mp.pe == 6) else None
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vb_cx):.8f}") if (Dg.mp.pe == 6) else None
+        # u = Field.new('2d')
+        # v = Field.new('2d')
+        
+        # # Vectorized initialization using JAX broadcasting
+        # i_indices = jnp.arange(Dg.mp.xsize) + Dg.mp.isd  # [0, 1, 2, ..., xsize-1] + isd
+        # j_indices = jnp.arange(Dg.mp.ysize) + Dg.mp.jsd  # [0, 1, 2, ..., ysize-1] + jsd
+        
+        # # Create meshgrid for broadcasting
+        # i_grid, j_grid = jnp.meshgrid(i_indices, j_indices, indexing='ij')
+        
+        # # Vectorized computation
+        # u_values = Dg.mp.tile * 10000 + i_grid * 100 + j_grid
+        # v_values = u_values * 1.1
+        
+        # # Set the values using vectorized assignment
+        # u = u.at[:].set(u_values)
+        # v = v.at[:].set(v_values)
+    
+        # uct, vct, ub_cx, ub_cy, vb_cx, vb_cy = vector_trans_2d(u, v)
 
-        vort = agrid_vorticity(v, u)
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vort):.16f}") if (Dg.mp.pe == 6) else None
-        div = agrid_div(u, v)
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(div):.16f}") if (Dg.mp.pe == 6) else None
-        gradx, grady = agrid_grad(u)
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(gradx):.16f}") if (Dg.mp.pe == 6) else None
-        print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(grady):.16f}") if (Dg.mp.pe == 6) else None
+        # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(uct):.8f}") if (Dg.mp.pe == 6) else None
+        # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vct):.8f}") if (Dg.mp.pe == 6) else None
+        # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(ub_cx):.8f}") if (Dg.mp.pe == 6) else None
+        # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vb_cy):.8f}") if (Dg.mp.pe == 6) else None
+        # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(ub_cy):.8f}") if (Dg.mp.pe == 6) else None
+        # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vb_cx):.8f}") if (Dg.mp.pe == 6) else None
+
+        # vort = agrid_vorticity(v, u)
+        # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(vort):.16f}") if (Dg.mp.pe == 6) else None
+        # div = agrid_div(u, v)
+        # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(div):.16f}") if (Dg.mp.pe == 6) else None
+        # gradx, grady = agrid_grad(u)
+        # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(gradx):.16f}") if (Dg.mp.pe == 6) else None
+        # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(grady):.16f}") if (Dg.mp.pe == 6) else None
 
     def __del__(self):
         """

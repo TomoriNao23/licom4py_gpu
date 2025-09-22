@@ -9,7 +9,7 @@ Updated: 2025-09-19
 
 from backend.calculation.field import Field
 
-def duogrid_cal(cls):
+def duogrid_cal(cls):   
     """
     Decorator to add calculation methods to Duogrid class.
     
@@ -30,6 +30,7 @@ def duogrid_cal(cls):
         This is the main entry point for all calculations.
         """
         cls._init_inner_outer_fields()
+        cls._ocean_depth()
         # other calculations here ...
         # cls._init_other_calculations()
     
@@ -54,9 +55,27 @@ def duogrid_cal(cls):
         sizex = cls.outer.shape[0]
         sizey = cls.outer.shape[1]
         cls.outer = cls.outer.at[ng:sizex-ng,ng:sizey-ng].set(0)
+
+    @classmethod
+    def _ocean_depth(cls):
+
+        cls.dzph = Field.new('2d')
+        cls.dzph_x = Field.new('2d')
+        cls.dzph_y = Field.new('2d')
+        cls.kmt = Field.new('2d')
+
+        cls.vit = Field.new('3d')
+
+        cls.dzph = cls.dzph.at[:,:].set(5600.0)
+        cls.dzph_x = cls.dzph_x.at[:,:].set(5600.0)
+        cls.dzph_y = cls.dzph_y.at[:,:].set(5600.0)
+        cls.kmt = cls.kmt.at[:,:].set(30)
+
+        cls.vit = cls.vit.at[:,:,:].set(1)
     
     # Add the methods to the class
     cls.init_calculations = init_calculations
     cls._init_inner_outer_fields = _init_inner_outer_fields
+    cls._ocean_depth = _ocean_depth
     
     return cls
