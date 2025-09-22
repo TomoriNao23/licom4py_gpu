@@ -2,8 +2,10 @@ import jax.numpy as jnp
 
 from backend.calculation.field import Field
 from duogrid.duogrid import Duogrid as Dg
+from momentum.barotropic import jax
 from operators.poly import scalar_interpolation_xy, vector_interpolation
 from operators.poly import vector_interpolation_ew, vector_interpolation_ns
+import functools
 
 
 class LMARS:
@@ -61,6 +63,7 @@ class LMARS:
 
         return None
 
+
     def get_vel_vis_2d(self, h : Field.datatype) -> None:
         """
         Get the Viscosity.velocity of the ocean current.
@@ -87,6 +90,7 @@ class LMARS:
         )
 
         return None
+
 
     def get_pgf_vis_2d(self, u : Field.datatype, v : Field.datatype) -> None:
         """
@@ -126,6 +130,7 @@ class LMARS:
 
         return None
 
+
     def add_vel_vis(self, u : Field.datatype, v : Field.datatype) -> None:
         """
         Add the Viscosity.velocity of the ocean current.
@@ -135,6 +140,7 @@ class LMARS:
 
         return None
 
+    
     def add_pgf_vis(self, x : Field.datatype, y : Field.datatype) -> None:
         """
         Add the Viscosity.pressure gradient force of the ocean current.

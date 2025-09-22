@@ -29,6 +29,8 @@ class Namelist(TimeConfig, LoaderMixin):
     barotropic_dt: int = field(default=150, metadata={"section": namelist_local[0]})
     baroclinic_dt: int = field(default=3000, metadata={"section": namelist_local[0]})
     tracer_interval: Optional[int] = field(default=None, metadata={"section": namelist_local[0]})
+    rk_barotr: int = field(default=2, metadata={"section": namelist_local[0]})
+    case: str = field(default='w92case2', metadata={"section": namelist_local[0]})
 
     # backend section
     lib: str = field(default='jax', metadata={"section": namelist_local[1]})

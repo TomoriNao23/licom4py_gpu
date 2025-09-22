@@ -13,6 +13,7 @@ import os
 
 
 # Local application imports
+from mymodule import Schedule
 from datatype import momentum_data
 from operators.agrid import agrid_vorticity, agrid_div, agrid_grad
 from readnamelist import Namelist
@@ -22,6 +23,7 @@ from duogrid.duogrid import Duogrid as Dg
 from operators.poly import vector_interpolation_ew, scalar_interpolation_x, scalar_interpolation_y
 from operators.remap import to_c_grid, to_d_grid, to_d_grid_upwind, to_a_grid, vector_trans_2d
 from momentum.momentum import Momentum
+from initial.w92_field import initialize_test_velocity_field
 
 import jax.numpy as jnp
 import numpy as np
@@ -46,7 +48,11 @@ class Initial:
 
         # momentum init
         self.momentum = Momentum()
-    
+
+        # schedule init
+        Schedule.init(self.namelist, ["barotropic"])
+
+        print(jnp.sum(self.momentum.ub), jnp.sum(self.momentum.vb), jnp.sum(self.momentum.h0)) if (Dg.mp.pe == 6) else None
 
         # u = Field.new('2d')
         # v = Field.new('2d')
@@ -82,6 +88,7 @@ class Initial:
         # gradx, grady = agrid_grad(u)
         # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(gradx):.16f}") if (Dg.mp.pe == 6) else None
         # print("cpu", Dg.mp.pe, "sum", f"{jnp.sum(grady):.16f}") if (Dg.mp.pe == 6) else None
+
 
     def __del__(self):
         """

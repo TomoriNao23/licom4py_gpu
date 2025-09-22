@@ -29,8 +29,8 @@ def main(debug_mode=False):
         licom = Initial()
         if not debug_mode:
             # Normal mode: run LICOM simulation
-            schedule = Schedule(licom.namelist,{})
-            schedule.run()
+            Schedule.run(licom.momentum)
+            
         else:
             # Debug mode: run debug functionality with existing initialization
             print("Running in debug mode...")

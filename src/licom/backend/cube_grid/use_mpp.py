@@ -73,6 +73,11 @@ class FMS_chtholly:
             'lib': namelist.lib,
             'platform': namelist.platform,
             'precision': namelist.precision,
+            'dtb': namelist.barotropic_dt,
+            'dtc': namelist.baroclinic_dt,
+            'nbb': int(namelist.baroclinic_dt / namelist.barotropic_dt),
+            'rk_barotr': namelist.rk_barotr,
+            'case': namelist.case,
             # from Chtholly FMS wrapper
             'tile': cls._lib.chtholly_get_tile(),
             'pe': cls._lib.chtholly_get_mpp_pe(),

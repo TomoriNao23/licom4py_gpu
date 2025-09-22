@@ -5,7 +5,7 @@ Description: Data structures for MPP (Massively Parallel Processing) configurati
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
-Updated: 2025-09-16
+Updated: 2025-09-22
 """
 # Standard library imports
 from typing import NamedTuple
@@ -33,6 +33,11 @@ MpDate = NamedTuple(
         ('ysize', int),
         ('platform', str), # Target platform: 'cpu' or 'gpu'
         ('lib', str),      # Backend library: 'jax' or 'numpy'
-        ('precision', str) # Data precision for arrays: 'single' or 'double'
+        ('precision', str), # Data precision for arrays: 'single' or 'double'
+        ('dtb', float),    # Barotropic time step
+        ('dtc', float),    # Baroclinic time step
+        ('nbb', int),      # Number of barotropic blocks
+        ('rk_barotr', int), # Runge-Kutta order for barotropic time stepping
+        ('case', str),     # Case name
     ]
 )
