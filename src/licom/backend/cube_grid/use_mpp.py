@@ -11,7 +11,11 @@ Updated: 2025-09-19 (add communication2d & ext_vector)
 # Standard library imports
 import ctypes
 import os
+import functools
 from typing import Callable
+
+import jax.numpy as jnp
+import jax
 
 # Local application imports
 from datatype import MpDate
@@ -240,108 +244,270 @@ class FMS_chtholly:
             The updated `var` after remapping (for JAX it returns a new array).
         """
         from duogrid.duogrid import Duogrid
-        mp = cls.mp
-
-        # Compute domain in Python local indices: is -> ng, ie -> ni-1-ng; js -> ng, je -> nj-1-ng
-        isd = mp.isd
-        jsd = mp.jsd
-        ied = mp.ied
-        jed = mp.jed
         
-        is_ = mp.is_
-        js = mp.js
-        ie = mp.ie
-        je = mp.je
-
-        ng = 3
-
-        # Work array
-        var_kik = var
-
-        # k2e parameters
+        # Extract parameters for JIT-compatible function
+        mp = cls.mp
+        isd, jsd, ied, jed = mp.isd, mp.jsd, mp.ied, mp.jed
+        is_, js, ie, je = mp.is_, mp.js, mp.ie, mp.je
+        
+        # Extract remapping flags
+        rmp_s, rmp_n, rmp_w, rmp_e = cls.rmp_s, cls.rmp_n, cls.rmp_w, cls.rmp_e
+        
+        # Extract k2e parameters
         coef = Duogrid.k2e_coef  # (ni, nj, nord)
         loc_arr = Duogrid.k2e_loc  # (ni, nj) Fortran physical indices
+        
+        # Call JIT-compiled function
+        return cls._cube_rmp_jit(var, isd, jsd, ied, jed, is_, js, ie, je, 
+                                rmp_s, rmp_n, rmp_w, rmp_e, coef, loc_arr)
+
+    @staticmethod
+    @functools.partial(jax.jit, static_argnums=(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))
+    def _cube_rmp_jit(var, isd, jsd, ied, jed, is_, js, ie, je, 
+                     rmp_s, rmp_n, rmp_w, rmp_e, coef, loc_arr):
+        """
+        JIT-compiled version of cube_rmp function.
+        
+        Args:
+            var: 2D JAX array for which boundary remapping is applied
+            isd, jsd, ied, jed: Domain indices
+            is_, js, ie, je: Local domain indices  
+            rmp_s, rmp_n, rmp_w, rmp_e: Remapping flags for each boundary
+            coef: k2e coefficients array
+            loc_arr: k2e location array
+            
+        Returns:
+            The updated `var` after remapping
+        """
+        # Work array
+        var_kik = var
+        
+        # Constants
         nord = 2
         offset = 1
 
         # South boundary
-        if cls.rmp_s:
-            for ii in range(1, ng + 1):
-                j = js - ii
-                for i in range(is_, ie + 1):
-                    loc = int(loc_arr[i-isd, j-jsd])
-                    lo = loc - offset
-                    var = var.at[i-isd, j-jsd].set(0)
-                    for n in range(1, nord+1):
-                        var = var.at[i-isd, j-jsd].set(
-                            var[i-isd, j-jsd] + 
-                            var_kik[lo+n-isd, j-jsd] * coef[i-isd, j-jsd, n-1]
-                        )
+        if rmp_s:
+            # ii = 1
+            j = js - 1
+            # Use array operations to remove loops
+            i_indices = jnp.arange(is_, ie + 1)
+            locs = loc_arr[i_indices-isd, j-jsd].astype(int)
+            los = locs - offset
+            # First set target positions to zero
+            var = var.at[i_indices-isd, j-jsd].set(0)
+            # Calculate weighted sum
+            var = var.at[i_indices-isd, j-jsd].set(
+                var[i_indices-isd, j-jsd] +
+                var_kik[los+1-isd, j-jsd] * coef[i_indices-isd, j-jsd, 0]
+            )
+            var = var.at[i_indices-isd, j-jsd].set(
+                var[i_indices-isd, j-jsd] +
+                var_kik[los+2-isd, j-jsd] * coef[i_indices-isd, j-jsd, 1]
+            )
+            # ii = 2
+            j = js - 2
+            i_indices = jnp.arange(is_, ie + 1)
+            locs = loc_arr[i_indices-isd, j-jsd].astype(int)
+            los = locs - offset
+            var = var.at[i_indices-isd, j-jsd].set(0)
+            var = var.at[i_indices-isd, j-jsd].set(
+                var[i_indices-isd, j-jsd] +
+                var_kik[los+1-isd, j-jsd] * coef[i_indices-isd, j-jsd, 0]
+            )
+            var = var.at[i_indices-isd, j-jsd].set(
+                var[i_indices-isd, j-jsd] +
+                var_kik[los+2-isd, j-jsd] * coef[i_indices-isd, j-jsd, 1]
+            )
+            # ii = 3
+            j = js - 3
+            # Use array operations to remove loops
+            i_indices = jnp.arange(is_, ie + 1)
+            locs = loc_arr[i_indices-isd, j-jsd].astype(int)
+            los = locs - offset
+            # First set target positions to zero
+            var = var.at[i_indices-isd, j-jsd].set(0)
+            # Calculate weighted sum
+            var = var.at[i_indices-isd, j-jsd].set(
+                var[i_indices-isd, j-jsd] +
+                var_kik[los+1-isd, j-jsd] * coef[i_indices-isd, j-jsd, 0]
+            )
+            var = var.at[i_indices-isd, j-jsd].set(
+                var[i_indices-isd, j-jsd] +
+                var_kik[los+2-isd, j-jsd] * coef[i_indices-isd, j-jsd, 1]
+            )
 
         # North boundary
-        if cls.rmp_n:
-            for ii in range(1, ng + 1):
-                j = je + ii
-                for i in range(is_, ie + 1):
-                    loc = int(loc_arr[i-isd, j-jsd])
-                    lo = loc - offset
-                    var = var.at[i-isd, j-jsd].set(0)
-                    for n in range(1, nord+1):
-                        var = var.at[i-isd, j-jsd].set(
-                            var[i-isd, j-jsd] + 
-                            var_kik[lo+n-isd, j-jsd] * coef[i-isd, j-jsd, n-1]
-                        )
+        if rmp_n:
+            # Manually unroll ii loop, ng=3, ii=1,2,3
+            # ii = 1
+            j = je + 1
+            # Use array operations to remove loops
+            i_indices = jnp.arange(is_, ie + 1)
+            locs = loc_arr[i_indices-isd, j-jsd].astype(int)
+            los = locs - offset
+            # First set target positions to zero
+            var = var.at[i_indices-isd, j-jsd].set(0)
+            # Calculate weighted sum
+            var = var.at[i_indices-isd, j-jsd].set(
+                var[i_indices-isd, j-jsd] +
+                var_kik[los+1-isd, j-jsd] * coef[i_indices-isd, j-jsd, 0]
+            )
+            var = var.at[i_indices-isd, j-jsd].set(
+                var[i_indices-isd, j-jsd] +
+                var_kik[los+2-isd, j-jsd] * coef[i_indices-isd, j-jsd, 1]
+            )
+            # ii = 2
+            j = je + 2
+            i_indices = jnp.arange(is_, ie + 1)
+            locs = loc_arr[i_indices-isd, j-jsd].astype(int)
+            los = locs - offset
+            var = var.at[i_indices-isd, j-jsd].set(0)
+            var = var.at[i_indices-isd, j-jsd].set(
+                var[i_indices-isd, j-jsd] +
+                var_kik[los+1-isd, j-jsd] * coef[i_indices-isd, j-jsd, 0]
+            )
+            var = var.at[i_indices-isd, j-jsd].set(
+                var[i_indices-isd, j-jsd] +
+                var_kik[los+2-isd, j-jsd] * coef[i_indices-isd, j-jsd, 1]
+            )
+            # ii = 3
+            j = je + 3
+            # Use array operations to remove loops
+            i_indices = jnp.arange(is_, ie + 1)
+            locs = loc_arr[i_indices-isd, j-jsd].astype(int)
+            los = locs - offset
+            # First set target positions to zero
+            var = var.at[i_indices-isd, j-jsd].set(0)
+            # Calculate weighted sum
+            var = var.at[i_indices-isd, j-jsd].set(
+                var[i_indices-isd, j-jsd] +
+                var_kik[los+1-isd, j-jsd] * coef[i_indices-isd, j-jsd, 0]
+            )
+            var = var.at[i_indices-isd, j-jsd].set(
+                var[i_indices-isd, j-jsd] +
+                var_kik[los+2-isd, j-jsd] * coef[i_indices-isd, j-jsd, 1]
+            )
                   
         # West boundary
-        if cls.rmp_w:
-            for ii in range(1, ng + 1):
-                i = is_ - ii
-                for j in range(js, je + 1):
-                    loc = int(loc_arr[i-isd, j-jsd])
-                    lo = loc - offset
-                    var = var.at[i-isd, j-jsd].set(0)
-                    for n in range(1, nord+1):
-                        var = var.at[i-isd, j-jsd].set(
-                            var[i-isd, j-jsd] + 
-                            var_kik[i-isd, lo+n-jsd] * coef[i-isd, j-jsd, n-1]
-                        )
+        if rmp_w:
+            # Manually unroll ii loop, ng=3, ii=1,2,3
+            # ii = 1
+            i = is_ - 1
+            # Use array operations to remove loops
+            j_indices = jnp.arange(js, je + 1)
+            locs = loc_arr[i-isd, j_indices-jsd].astype(int)
+            los = locs - offset
+            # First set target positions to zero
+            var = var.at[i-isd, j_indices-jsd].set(0)
+            # Calculate weighted sum
+            var = var.at[i-isd, j_indices-jsd].set(
+                var[i-isd, j_indices-jsd] +
+                var_kik[i-isd, los+1-jsd] * coef[i-isd, j_indices-jsd, 0]
+            )
+            var = var.at[i-isd, j_indices-jsd].set(
+                var[i-isd, j_indices-jsd] +
+                var_kik[i-isd, los+2-jsd] * coef[i-isd, j_indices-jsd, 1]
+            )
+            # ii = 2
+            i = is_ - 2
+            j_indices = jnp.arange(js, je + 1)
+            locs = loc_arr[i-isd, j_indices-jsd].astype(int)
+            los = locs - offset
+            var = var.at[i-isd, j_indices-jsd].set(0)
+            var = var.at[i-isd, j_indices-jsd].set(
+                var[i-isd, j_indices-jsd] +
+                var_kik[i-isd, los+1-jsd] * coef[i-isd, j_indices-jsd, 0]
+            )
+            var = var.at[i-isd, j_indices-jsd].set(
+                var[i-isd, j_indices-jsd] +
+                var_kik[i-isd, los+2-jsd] * coef[i-isd, j_indices-jsd, 1]
+            )
+            # ii = 3
+            i = is_ - 3
+            # Use array operations to remove loops
+            j_indices = jnp.arange(js, je + 1)
+            locs = loc_arr[i-isd, j_indices-jsd].astype(int)
+            los = locs - offset
+            # First set target positions to zero
+            var = var.at[i-isd, j_indices-jsd].set(0)
+            # Calculate weighted sum
+            var = var.at[i-isd, j_indices-jsd].set(
+                var[i-isd, j_indices-jsd] +
+                var_kik[i-isd, los+1-jsd] * coef[i-isd, j_indices-jsd, 0]
+            )
+            var = var.at[i-isd, j_indices-jsd].set(
+                var[i-isd, j_indices-jsd] +
+                var_kik[i-isd, los+2-jsd] * coef[i-isd, j_indices-jsd, 1]
+            )
 
         # East boundary
-        if cls.rmp_e:
-            for ii in range(1, ng + 1):
-                i = ie + ii
-                for j in range(js, je + 1):
-                    loc = int(loc_arr[i-isd, j-jsd])
-                    lo = loc - offset
-                    var = var.at[i-isd, j-jsd].set(0)
-                    for n in range(1, nord+1):
-                        var = var.at[i-isd, j-jsd].set(
-                            var[i-isd, j-jsd] + 
-                            var_kik[i-isd, lo+n-jsd] * coef[i-isd, j-jsd, n-1]
-                        )
+        if rmp_e:
+            # Manually unroll ii loop, ng=3, ii=1,2,3
+            # ii = 1
+            i = ie + 1
+            # Use array operations to remove loops
+            j_indices = jnp.arange(js, je + 1)
+            locs = loc_arr[i-isd, j_indices-jsd].astype(int)
+            los = locs - offset
+            # First set target positions to zero
+            var = var.at[i-isd, j_indices-jsd].set(0)
+            # Calculate weighted sum
+            var = var.at[i-isd, j_indices-jsd].set(
+                var[i-isd, j_indices-jsd] +
+                var_kik[i-isd, los+1-jsd] * coef[i-isd, j_indices-jsd, 0]
+            )
+            var = var.at[i-isd, j_indices-jsd].set(
+                var[i-isd, j_indices-jsd] +
+                var_kik[i-isd, los+2-jsd] * coef[i-isd, j_indices-jsd, 1]
+            )
+            # ii = 2
+            i = ie + 2
+            j_indices = jnp.arange(js, je + 1)
+            locs = loc_arr[i-isd, j_indices-jsd].astype(int)
+            los = locs - offset
+            var = var.at[i-isd, j_indices-jsd].set(0)
+            var = var.at[i-isd, j_indices-jsd].set(
+                var[i-isd, j_indices-jsd] +
+                var_kik[i-isd, los+1-jsd] * coef[i-isd, j_indices-jsd, 0]
+            )
+            var = var.at[i-isd, j_indices-jsd].set(
+                var[i-isd, j_indices-jsd] +
+                var_kik[i-isd, los+2-jsd] * coef[i-isd, j_indices-jsd, 1]
+            )
+            # ii = 3
+            i = ie + 3
+            # Use array operations to remove loops
+            j_indices = jnp.arange(js, je + 1)
+            locs = loc_arr[i-isd, j_indices-jsd].astype(int)
+            los = locs - offset
+            # First set target positions to zero
+            var = var.at[i-isd, j_indices-jsd].set(0)
+            # Calculate weighted sum
+            var = var.at[i-isd, j_indices-jsd].set(
+                var[i-isd, j_indices-jsd] +
+                var_kik[i-isd, los+1-jsd] * coef[i-isd, j_indices-jsd, 0]
+            )
+            var = var.at[i-isd, j_indices-jsd].set(
+                var[i-isd, j_indices-jsd] +
+                var_kik[i-isd, los+2-jsd] * coef[i-isd, j_indices-jsd, 1]
+            )
 
         # Copy corners (need to check if rmp)
         # sw
-        for j in range(jsd, js-1 + 1):
-            for i in range(isd, is_-1 + 1):
-                var = var.at[i-isd, j-jsd].set(var[is_-isd, j-jsd])
+        var = var.at[0:is_-isd, 0:js-jsd].set(var[is_-isd, 0:js-jsd])
 
         # se
-        for j in range(jsd, js-1 + 1):
-            for i in range(ie+1, ied + 1):
-                var = var.at[i-isd, j-jsd].set(var[ie-isd, j-jsd])
+        var = var.at[ie+1-isd:ied+1-isd, 0:js-jsd].set(var[ie-isd, 0:js-jsd])
 
         # ne
-        for j in range(je+1, jed + 1):
-            for i in range(ie+1, ied + 1):
-                var = var.at[i-isd, j-jsd].set(var[ie-isd, j-jsd])
+        var = var.at[ie+1-isd:ied+1-isd, je+1-jsd:jed+1-jsd].set(var[ie-isd, je+1-jsd:jed+1-jsd])
 
         # nw
-        for j in range(je+1, jed + 1):
-            for i in range(isd, is_-1 + 1):
-                var = var.at[i-isd, j-jsd].set(var[is_-isd, j-jsd])
+        var = var.at[0:is_-isd, je+1-jsd:jed+1-jsd].set(var[is_-isd, je+1-jsd:jed+1-jsd])
 
         return var
+
 
     @classmethod
     def _define_c_size(cls) -> None:

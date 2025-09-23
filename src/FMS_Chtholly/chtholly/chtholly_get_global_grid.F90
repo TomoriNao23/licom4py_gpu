@@ -272,5 +272,3 @@ contains
   end subroutine chtholly_global_grid_get_d_dx_dg
 
 end module c_global_grid_mod
-
-

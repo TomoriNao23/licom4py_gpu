@@ -1,9 +1,11 @@
 from datatype import MomentumData
 from duogrid.duogrid import Duogrid as Dg
-from .barotropic import add_barotropic_methods
+from .barotr import add_barotropic_methods
 from initial.w92_field import initialize_test_velocity_field
+from mymodule.diag import add_diag_methods
 
 @add_barotropic_methods
+@add_diag_methods
 class Momentum(MomentumData):
 
     def __init__(self):

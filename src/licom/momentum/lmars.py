@@ -1,8 +1,16 @@
+"""
+File: lmars.py
+Description: LMARS methods for Momentum class.
+
+Author: Chtholly <mengleshan@mail.iap.ac.cn>
+Created: 2025-09-23
+"""
+
 import jax.numpy as jnp
 
 from backend.calculation.field import Field
 from duogrid.duogrid import Duogrid as Dg
-from momentum.barotropic import jax
+from momentum.barotr import jax
 from operators.poly import scalar_interpolation_xy, vector_interpolation
 from operators.poly import vector_interpolation_ew, vector_interpolation_ns
 import functools

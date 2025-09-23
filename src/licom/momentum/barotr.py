@@ -4,129 +4,35 @@ Description: High-performance barotropic time stepping methods for Momentum clas
     Ported from Fortran barotr_mod.F90 with JAX JIT compilation for maximum performance.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
-Created: 2025-09-22 (Ported from Fortran)
+Created: 2025-09-22
 
 REVISION HISTORY:
-    30/12/2024 - Initial Fortran Version
-    17/03/2025 - Fortran revisions for barotropic advection
     22/09/2025 - Python port with high-performance JAX implementation
+    23/09/2025 - split into barotr_jit.py and barotr.py
 """
 
 # Third-party imports
 import jax
 import jax.numpy as jnp
-import functools
+
+# Standard library imports
 from typing import Tuple
 
 # Local application imports
-from backend.calculation.field import Field
 from backend.cube_grid.use_mpp import FMS_chtholly
 from duogrid.duogrid import Duogrid as Dg
-from operators.agrid import agrid_div, agrid_grad, agrid_vorticity
+from operators.agrid import agrid_div
 from operators.remap import vector_trans_2d
-from operators.poly import vector_interpolation
-
-
-# JIT-compiled pure functions (module level for better performance)
-@jax.jit
-def _flux_calculation_jit(h0: jax.Array, ub_cx: jax.Array, vb_cy: jax.Array, 
-                         dzph_x: jax.Array, dzph_y: jax.Array) -> Tuple[jax.Array, jax.Array]:
-    """Calculate flux of <hu> & <hv> using upwind algorithm"""
-    # Get interpolated h values
-    he, hw, hn, hs = vector_interpolation(h0)
-    
-    # Upwind scheme for flux calculation
-    # X-direction flux
-    h_upwind_x = jnp.zeros_like(ub_cx).at[1:, :].set(
-        jnp.where(
-            ub_cx[1:, :] > 0.0, he[:-1, :], hw[1:, :]
-        )
-    )
-    flux_hu = jnp.zeros_like(ub_cx).at[:, :].set(
-        (h_upwind_x + dzph_x) * ub_cx
-    )
-    
-    # Y-direction flux  
-    h_upwind_y = jnp.zeros_like(vb_cy).at[:, 1:].set(
-        jnp.where(vb_cy[:, 1:] > 0.0, hn[:, :-1], hs[:, 1:])
-    )
-    flux_hv = jnp.zeros_like(vb_cy).at[:, :].set(
-        (h_upwind_y + dzph_y) * vb_cy
-    )
-    
-    return flux_hu, flux_hv
-
-
-@jax.jit
-def _calculate_pgf_jit(h0: jax.Array, pax: jax.Array, pxb: jax.Array, whx: jax.Array,
-                      pay: jax.Array, pyb: jax.Array, why: jax.Array, wgp: jax.Array) -> Tuple[jax.Array, jax.Array]:
-    """Calculate pressure gradient force"""
-    # Calculate SSH gradient
-    gradx, grady = agrid_grad(h0)
-    
-    # PGF calculation
-    grav = 9.8
-    pgf_u = (wgp - 1.0) * grav * gradx + pax + pxb - h0 * whx
-    pgf_v = (wgp - 1.0) * grav * grady + pay + pyb - h0 * why
-    
-    return pgf_u, pgf_v
-
-
-@jax.jit
-def _calculate_rhs_jit(pgf_u: jax.Array, pgf_v: jax.Array, advx: jax.Array, advy: jax.Array,
-                      a_f: float, vb_ct: jax.Array, ub_ct: jax.Array) -> Tuple[jax.Array, jax.Array]:
-    """Calculate right-hand side of momentum equations"""
-    rhs_u = pgf_u + advx + a_f * vb_ct
-    rhs_v = pgf_v + advy - a_f * ub_ct
-    
-    return rhs_u, rhs_v
-
-
-@jax.jit
-def _calculate_advection_jit(vb_cx: jax.Array, ub_cy: jax.Array, ub_cx: jax.Array, 
-                            vb_cy: jax.Array, vb_ct: jax.Array, ub_ct: jax.Array,
-                            rdx: jax.Array, rdy: jax.Array) -> Tuple[jax.Array, jax.Array]:
-    """Calculate 2D advection terms"""
-    # Calculate vorticity
-    vort = agrid_vorticity(vb_cx, ub_cy)
-    
-    # Calculate kinetic energy terms
-    kinetic_u = 0.5 * (ub_cx**2 + vb_cx**2)
-    kinetic_v = 0.5 * (vb_cy**2 + ub_cy**2)
-    
-    # Calculate advection
-    advx = jnp.zeros_like(vb_cx).at[:-1, :].set(
-        vort[:-1, :] * vb_ct[:-1, :] - (
-            kinetic_u[1:, :] - kinetic_u[:-1, :]
-        ) * rdx[:-1, :]
-    )
-    advy = jnp.zeros_like(vb_cy).at[:, :-1].set(
-        -vort[:, :-1] * ub_ct[:, :-1] - (
-            kinetic_v[:, 1:] - kinetic_v[:, :-1]
-        ) * rdy[:, :-1]
-    )
-    
-    return advx, advy
-
-
-@jax.jit
-def _update_ssh_jit(h0p: jax.Array, div_out: jax.Array, dt: float) -> jax.Array:
-    """Update SSH field"""
-    return h0p - div_out * dt
-
-
-@jax.jit
-def _update_velocities_jit(ubp: jax.Array, vbp: jax.Array,
-                          rhs_u: jax.Array, rhs_v: jax.Array, 
-                          dt: float) -> Tuple[jax.Array, jax.Array]:
-    """Update velocity fields"""
-    return ubp + rhs_u * dt, vbp + rhs_v * dt
-
-
-@jax.jit
-def _fb_scheme_jit(h0: jax.Array, h0_tem: jax.Array, beta_d: float) -> jax.Array:
-    """Forward-Backward scheme"""
-    return (1.0 - beta_d) * h0 + beta_d * h0_tem
+from ._barotr_jit import (
+    _flux_calculation_jit,
+    _calculate_pgf_jit,
+    _calculate_rhs_jit,
+    _calculate_advection_jit,
+    _update_ssh_jit,
+    _update_velocities_jit,
+    _fb_scheme_jit,
+    _horizontal_diffusion_jit,
+)
 
 
 def add_barotropic_methods(cls):
@@ -140,6 +46,7 @@ def add_barotropic_methods(cls):
         """Barotropic Time Stepping Using 2nd-order Runge-Kutta"""
         beta_d = 0.0
         
+
         for nc in range(1, self.nbb + 1):
             is_nc = (nc == self.nbb)
             
@@ -149,10 +56,8 @@ def add_barotropic_methods(cls):
             
             # Post-process
             self._postprocess()
+        
 
-            if Dg.mp.pe == 6:
-                print(jnp.average(self.ub), jnp.average(self.vb), jnp.average(self.h0))
-                print(jnp.max(self.ub), jnp.max(self.vb), jnp.max(self.h0))
     
     def barotr_rk3(self) -> None:
         """Barotropic Time Stepping Using 3rd-order Runge-Kutta"""
@@ -181,7 +86,7 @@ def add_barotropic_methods(cls):
         self._vector_transform_and_comm()
         
         # Add LMARS velocity viscosity
-        self._lmars_add_vel_vis()
+        #self._lmars_add_vel_vis()
         
         # Predict SSH
         self._predict_ssh(dt, is_laststep)
@@ -211,8 +116,10 @@ def add_barotropic_methods(cls):
         if is_laststep:
             flux_hu, flux_hv = FMS_chtholly.communication2d(flux_hu, flux_hv)
         
-        # Calculate divergence and update SSH
+        # Calculate divergence
         div_out = agrid_div(flux_hu, flux_hv)
+
+        # Update SSH
         self.h0 = _update_ssh_jit(self.h0p, div_out, dt)
     
     def _predict_uv(self, dt: float, h_old: jax.Array) -> None:
@@ -221,13 +128,18 @@ def add_barotropic_methods(cls):
         pgf_u, pgf_v = self._calculate_pgf(h_old)
         
         # Add LMARS PGF viscosity
-        pgf_u, pgf_v = self._lmars_add_pgf_vis(pgf_u, pgf_v)
+        #pgf_u, pgf_v = self._lmars_add_pgf_vis(pgf_u, pgf_v)
+        
+        # Add horizontal mixing
+        pgf_u, pgf_v = self._add_hmix(pgf_u, pgf_v)
         
         # Calculate advection
         self.advx, self.advy = self._calculate_advection()
         
-        # Calculate RHS and update velocities
+        # Calculate RHS 
         rhs_u, rhs_v = self._calculate_rhs(pgf_u, pgf_v)
+
+        # Update velocities
         self.ub, self.vb = _update_velocities_jit(
             self.ubp, self.vbp, rhs_u, rhs_v, dt
         )
@@ -264,6 +176,12 @@ def add_barotropic_methods(cls):
         """Vector transformation"""
         (self.ub_ct, self.vb_ct, self.ub_cx, self.ub_cy,
          self.vb_cx, self.vb_cy) = vector_trans_2d(self.ub, self.vb)
+
+    def _add_hmix(self, pgf_u: jax.Array, pgf_v: jax.Array) -> Tuple[jax.Array, jax.Array]:
+        hduk, hdvk = _horizontal_diffusion_jit(self.ub, self.vb,
+            Dg.d_dx[:,:-1], Dg.c_dy[:-1,:],Dg.rdx, Dg.rdy,80000
+            )
+        return pgf_u + hduk, pgf_v + hdvk
         
     def _postprocess(self) -> None:
         """Post-processing after completing one barotropic step"""
@@ -275,7 +193,7 @@ def add_barotropic_methods(cls):
         self.vbp = self.vb  
         self.h0p = self.h0
         
-        # Accumulate for time averaging (commented out as in original)
+        # Accumulate for time averaging
         # self.h0f = self.h0f + self.h0
         # self.h0bf = self.h0bf + self.h0
     
@@ -310,5 +228,5 @@ def add_barotropic_methods(cls):
     cls._lmars_get_celerity = _lmars_get_celerity
     cls._lmars_add_vel_vis = _lmars_add_vel_vis
     cls._lmars_add_pgf_vis = _lmars_add_pgf_vis
-    
+    cls._add_hmix = _add_hmix
     return cls

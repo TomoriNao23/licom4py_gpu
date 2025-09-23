@@ -11,6 +11,7 @@ Updated: 2025-09-03
 from typing import Union
 
 # Local application imports
+from duogrid.duogrid import Duogrid as Dg
 from readnamelist import Namelist, Timer
 from momentum.momentum import Momentum
 
@@ -28,13 +29,20 @@ class Schedule:
         cls.total_baroclinic_steps: int = namelist._total_baroclinic_steps
         cls.routines: list = ["barotropic", "baroclinic", "tracer"] if routines is None else routines
         cls.current_time: Timer = Timer(namelist._start_datetime, namelist.baroclinic_dt)
+        cls.diag_interval: int = 3600 / namelist.baroclinic_dt * namelist.diag_freq
 
     @classmethod
     def run(cls, momentum: Momentum) -> None:
         """
         Total number of baroclinic steps (outer loop)
         """
-        for bc_step in range(1, cls.total_baroclinic_steps + 1):
+        for bc_step in range(cls.total_baroclinic_steps):
+
+            # Diagnostics
+            if bc_step % cls.diag_interval == 0:
+                if Dg.mp.pe == 0:
+                    print(f"Time: {cls.current_time.prev_dt.strftime('%Y-%m-%d-%H')}")
+                momentum.print_global_diag()
 
             # Multiple barotropic sub-steps
             if "barotropic" in cls.routines:

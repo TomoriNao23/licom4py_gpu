@@ -1,4 +1,3 @@
-
 from backend.calculation.field import Field
 
 class DataABC():
