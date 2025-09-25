@@ -54,7 +54,7 @@ def _calculate_pgf_jit(h0: jax.Array, pax: jax.Array, pxb: jax.Array, whx: jax.A
     gradx, grady = agrid_grad(h0)
     
     # PGF calculation
-    grav = 9.8
+    grav = 9.80
     #pgf_u = (wgp - 1.0) * grav * gradx + pax + pxb - h0 * whx
     #pgf_v = (wgp - 1.0) * grav * grady + pay + pyb - h0 * why
     pgf_u = (- 1.0) * grav * gradx

@@ -50,6 +50,10 @@ module global_grid_data_mod
         real(kind=R_GRID),dimension(:,:,:,:),  allocatable :: d_ct2ort_y_dg, d_ort2ct_y_dg
         real(kind=R_GRID),dimension(:,:),  allocatable :: d_sina_dg, d_cosa_dg
         real(kind=R_GRID),dimension(:,:),  allocatable :: d_dx_dg
+        real(kind=R_GRID),dimension(:,:),  allocatable :: a_f_dg
+        real(kind=R_GRID),dimension(:,:),  allocatable :: c_dx_dg
+        real(kind=R_GRID),dimension(:,:),  allocatable :: d_dy_dg
+        real(kind=R_GRID),dimension(:,:),  allocatable :: ub, vb
 ! end chtholly
         real(kind=R_GRID),dimension(:,:,:),  allocatable :: ext_x, kik_x
         real(kind=R_GRID),dimension(:,:,:),  allocatable :: ext_y, kik_y

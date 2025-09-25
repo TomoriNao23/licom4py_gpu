@@ -31,7 +31,7 @@ class Namelist(TimeConfig, LoaderMixin):
     tracer_interval: Optional[int] = field(default=None, metadata={"section": namelist_local[0]})
     rk_barotr: int = field(default=2, metadata={"section": namelist_local[0]})
     case: str = field(default='w92case2', metadata={"section": namelist_local[0]})
-    diag_freq: int = field(default=1, metadata={"section": namelist_local[0]})
+    diag_freq: Optional[int] = field(default=None, metadata={"section": namelist_local[0]})
 
     # backend section
     lib: str = field(default='jax', metadata={"section": namelist_local[1]})

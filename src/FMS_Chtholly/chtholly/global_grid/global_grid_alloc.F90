@@ -138,6 +138,11 @@ contains
         allocate(gg%d_cosa_dg(isd:ied, jsd:jed+1 ) )
         allocate(gg%d_dx_dg(isd:ied, jsd:jed+1 ) )
 
+        allocate(gg%a_f_dg(isd:ied, jsd:jed ) )
+        allocate(gg%c_dx_dg(isd:ied+1, jsd:jed ) )
+        allocate(gg%d_dy_dg(isd:ied, jsd:jed+1 ) )
+        allocate(gg%ub(isd:ied, jsd:jed ) )
+        allocate(gg%vb(isd:ied, jsd:jed ) )
 
     end subroutine global_grid_alloc
     !===========================================================================
@@ -239,6 +244,11 @@ contains
         deallocate( gg%d_cosa_dg )
         deallocate( gg%d_dx_dg )
 
+        deallocate( gg%a_f_dg )
+        deallocate( gg%c_dx_dg )
+        deallocate( gg%d_dy_dg )
+        deallocate( gg%ub )
+        deallocate( gg%vb )
     end subroutine global_grid_dealloc
     !===========================================================================
 end module global_grid_alloc_mod

@@ -73,6 +73,12 @@ def _define_once():
     lib.chtholly_global_grid_get_rdy_dg.argtypes = [POINTER(c_double)]
     lib.chtholly_global_grid_get_k2e_loc_dg.restype = None
     lib.chtholly_global_grid_get_k2e_loc_dg.argtypes = [POINTER(c_int)]
+    lib.chtholly_global_grid_get_a_f_dg.restype = None
+    lib.chtholly_global_grid_get_a_f_dg.argtypes = [POINTER(c_double)]
+    lib.chtholly_global_grid_get_ub.restype = None
+    lib.chtholly_global_grid_get_ub.argtypes = [POINTER(c_double)]
+    lib.chtholly_global_grid_get_vb.restype = None
+    lib.chtholly_global_grid_get_vb.argtypes = [POINTER(c_double)]
 
     # 3D A-grid
     lib.chtholly_global_grid_get_a_pt_ext.restype = None
@@ -109,6 +115,8 @@ def _define_once():
     lib.chtholly_global_grid_get_c_cosa_dg.argtypes = [POINTER(c_double)]
     lib.chtholly_global_grid_get_c_dy_dg.restype = None
     lib.chtholly_global_grid_get_c_dy_dg.argtypes = [POINTER(c_double)]
+    lib.chtholly_global_grid_get_c_dx_dg.restype = None
+    lib.chtholly_global_grid_get_c_dx_dg.argtypes = [POINTER(c_double)]
 
     # 4D/2D D-grid
     lib.chtholly_global_grid_get_d_gco_dg.restype = None
@@ -125,6 +133,8 @@ def _define_once():
     lib.chtholly_global_grid_get_d_cosa_dg.argtypes = [POINTER(c_double)]
     lib.chtholly_global_grid_get_d_dx_dg.restype = None
     lib.chtholly_global_grid_get_d_dx_dg.argtypes = [POINTER(c_double)]
+    lib.chtholly_global_grid_get_d_dy_dg.restype = None
+    lib.chtholly_global_grid_get_d_dy_dg.argtypes = [POINTER(c_double)]
 
     _defined = True
 
@@ -194,6 +204,9 @@ def get_all_a_grid(isd: int, ied: int, jsd: int, jed: int):
         ("rda", _libc().chtholly_global_grid_get_rda_dg),
         ("rdx", _libc().chtholly_global_grid_get_rdx_dg),
         ("rdy", _libc().chtholly_global_grid_get_rdy_dg),
+        ("a_f", _libc().chtholly_global_grid_get_a_f_dg),
+        ("ub", _libc().chtholly_global_grid_get_ub),
+        ("vb", _libc().chtholly_global_grid_get_vb),
     ]:
         arr = np.empty(ni_nj, dtype=np.float64, order="F")
         name[1](arr.ctypes.data_as(POINTER(c_double)))
@@ -245,6 +258,7 @@ def get_all_bc_d_grid(isd: int, ied: int, jsd: int, jed: int):
         ("c_sina", _libc().chtholly_global_grid_get_c_sina_dg, _shape_2d_cgrid),
         ("c_cosa", _libc().chtholly_global_grid_get_c_cosa_dg, _shape_2d_cgrid),
         ("c_dy", _libc().chtholly_global_grid_get_c_dy_dg, _shape_2d_cgrid),
+        ("c_dx", _libc().chtholly_global_grid_get_c_dx_dg, _shape_2d_cgrid),
     ]:
         arr2 = np.empty(shape(isd, ied, jsd, jed), dtype=np.float64, order="F")
         fn(arr2.ctypes.data_as(POINTER(c_double)))
@@ -264,6 +278,7 @@ def get_all_bc_d_grid(isd: int, ied: int, jsd: int, jed: int):
         ("d_sina", _libc().chtholly_global_grid_get_d_sina_dg, _shape_2d_dgrid),
         ("d_cosa", _libc().chtholly_global_grid_get_d_cosa_dg, _shape_2d_dgrid),
         ("d_dx", _libc().chtholly_global_grid_get_d_dx_dg, _shape_2d_dgrid),
+        ("d_dy", _libc().chtholly_global_grid_get_d_dy_dg, _shape_2d_dgrid),
     ]:
         arr2 = np.empty(shape(isd, ied, jsd, jed), dtype=np.float64, order="F")
         fn(arr2.ctypes.data_as(POINTER(c_double)))

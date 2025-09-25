@@ -43,6 +43,12 @@ module c_global_grid_mod
   public :: chtholly_global_grid_get_d_cosa_dg
   public :: chtholly_global_grid_get_d_dx_dg
 
+  public :: chtholly_global_grid_get_a_f_dg
+  public :: chtholly_global_grid_get_c_dx_dg
+  public :: chtholly_global_grid_get_d_dy_dg
+  public :: chtholly_global_grid_get_ub
+  public :: chtholly_global_grid_get_vb
+
   type(global_grid_type), save :: gg
 
 contains
@@ -270,5 +276,35 @@ contains
     real(c_double), intent(out) :: out_arr(size(gg%d_dx_dg,1), size(gg%d_dx_dg,2))
     out_arr(:,:) = gg%d_dx_dg(:,:)
   end subroutine chtholly_global_grid_get_d_dx_dg
+
+  subroutine chtholly_global_grid_get_a_f_dg(out_arr) bind(C, name="chtholly_global_grid_get_a_f_dg")
+    use iso_c_binding, only: c_double
+    real(c_double), intent(out) :: out_arr(size(gg%a_f_dg,1), size(gg%a_f_dg,2))
+    out_arr(:,:) = gg%a_f_dg(:,:)
+  end subroutine chtholly_global_grid_get_a_f_dg
+
+  subroutine chtholly_global_grid_get_c_dx_dg(out_arr) bind(C, name="chtholly_global_grid_get_c_dx_dg")
+    use iso_c_binding, only: c_double
+    real(c_double), intent(out) :: out_arr(size(gg%c_dx_dg,1), size(gg%c_dx_dg,2))
+    out_arr(:,:) = gg%c_dx_dg(:,:)
+  end subroutine chtholly_global_grid_get_c_dx_dg
+
+  subroutine chtholly_global_grid_get_d_dy_dg(out_arr) bind(C, name="chtholly_global_grid_get_d_dy_dg")
+    use iso_c_binding, only: c_double
+    real(c_double), intent(out) :: out_arr(size(gg%d_dy_dg,1), size(gg%d_dy_dg,2))
+    out_arr(:,:) = gg%d_dy_dg(:,:)
+  end subroutine chtholly_global_grid_get_d_dy_dg
+
+  subroutine chtholly_global_grid_get_ub(out_arr) bind(C, name="chtholly_global_grid_get_ub")
+    use iso_c_binding, only: c_double
+    real(c_double), intent(out) :: out_arr(size(gg%ub,1), size(gg%ub,2))
+    out_arr(:,:) = gg%ub(:,:)
+  end subroutine chtholly_global_grid_get_ub
+
+  subroutine chtholly_global_grid_get_vb(out_arr) bind(C, name="chtholly_global_grid_get_vb")
+    use iso_c_binding, only: c_double
+    real(c_double), intent(out) :: out_arr(size(gg%vb,1), size(gg%vb,2))
+    out_arr(:,:) = gg%vb(:,:)
+  end subroutine chtholly_global_grid_get_vb
 
 end module c_global_grid_mod

@@ -4,7 +4,10 @@ Description: Updated MomentumData class with all fields required for barotropic 
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-22
-Updated: 2025-09-22 (Added missing fields for barotropic computation)
+Updated: 2025-09-24
+REVISION HISTORY:
+    2025-09-22 - Chtholly added missing fields for barotropic computation
+    2025-09-24 - Chtholly added LMARS related fields
 """
 
 from .data_abc import DataABC
@@ -43,7 +46,10 @@ class MomentumData(DataABC):
             'dlub', 'dlvb',       # Laplacian of velocity (for viscosity)
             
             # Work arrays
-            'wgp',                # Work array for pressure gradient
+            'wgp',     
+
+            # lmars related terms   
+            'celerity_x', 'celerity_y',        
         ],
         
         # 3D fields on A-grid (npz, isd:ied, jsd:jed)  

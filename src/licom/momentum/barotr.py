@@ -5,6 +5,7 @@ Description: High-performance barotropic time stepping methods for Momentum clas
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-22
+Updated: 2025-09-24
 
 REVISION HISTORY:
     22/09/2025 - Python port with high-performance JAX implementation
@@ -33,6 +34,11 @@ from ._barotr_jit import (
     _fb_scheme_jit,
     _horizontal_diffusion_jit,
 )
+from ._lmars_jit import (
+    get_celerity_jit,
+    get_vel_vis_2d_jit,
+    get_pgf_vis_2d_jit,
+)
 
 
 def add_barotropic_methods(cls):
@@ -56,7 +62,8 @@ def add_barotropic_methods(cls):
             
             # Post-process
             self._postprocess()
-        
+            # if Dg.mp.pe == 0:
+            #     print("h0*",nc,jnp.max(self.h0[3:-3,3:-3]), jnp.min(self.h0[3:-3,3:-3]), jnp.sum(self.h0[3:-3,3:-3]))        
 
     
     def barotr_rk3(self) -> None:
@@ -77,7 +84,7 @@ def add_barotropic_methods(cls):
     def _step_rk(self, dt: float, beta_d: float, is_laststep: bool, isnc: bool) -> None:
         """Kernel of Barotropic Time Stepping in RK"""
         # Store h0 for FB scheme
-        h0_tem = self.h0
+        _h0_tem = self.h0
         
         # LMARS celerity
         self._lmars_get_celerity()
@@ -86,19 +93,19 @@ def add_barotropic_methods(cls):
         self._vector_transform_and_comm()
         
         # Add LMARS velocity viscosity
-        #self._lmars_add_vel_vis()
-        
+        self._lmars_add_vel_vis()
+
         # Predict SSH
         self._predict_ssh(dt, is_laststep)
         
         # Extend scalar boundary
         self.h0 = FMS_chtholly.ext_scalar(self.h0)
-        
+
         # Forward-Backward scheme
-        h0_tem = _fb_scheme_jit(self.h0, h0_tem, beta_d)
+        _h0_tem = _fb_scheme_jit(self.h0, _h0_tem, beta_d)
         
         # Predict velocities
-        self._predict_uv(dt, h0_tem)
+        self._predict_uv(dt, _h0_tem)
         
         # Extend vector boundary
         self.ub, self.vb = FMS_chtholly.ext_vector(self.ub, self.vb)
@@ -111,7 +118,7 @@ def add_barotropic_methods(cls):
         """SSH prediction"""
         # Calculate flux
         flux_hu, flux_hv = self._flux_calculation()
-        
+            
         # Communication (non-JIT part handled separately)
         if is_laststep:
             flux_hu, flux_hv = FMS_chtholly.communication2d(flux_hu, flux_hv)
@@ -121,17 +128,14 @@ def add_barotropic_methods(cls):
 
         # Update SSH
         self.h0 = _update_ssh_jit(self.h0p, div_out, dt)
-    
+
     def _predict_uv(self, dt: float, h_old: jax.Array) -> None:
         """Velocity prediction"""
         # Calculate pressure gradient force
         pgf_u, pgf_v = self._calculate_pgf(h_old)
         
         # Add LMARS PGF viscosity
-        #pgf_u, pgf_v = self._lmars_add_pgf_vis(pgf_u, pgf_v)
-        
-        # Add horizontal mixing
-        pgf_u, pgf_v = self._add_hmix(pgf_u, pgf_v)
+        pgf_u, pgf_v = self._lmars_add_pgf_vis(pgf_u, pgf_v)
         
         # Calculate advection
         self.advx, self.advy = self._calculate_advection()
@@ -176,12 +180,6 @@ def add_barotropic_methods(cls):
         """Vector transformation"""
         (self.ub_ct, self.vb_ct, self.ub_cx, self.ub_cy,
          self.vb_cx, self.vb_cy) = vector_trans_2d(self.ub, self.vb)
-
-    def _add_hmix(self, pgf_u: jax.Array, pgf_v: jax.Array) -> Tuple[jax.Array, jax.Array]:
-        hduk, hdvk = _horizontal_diffusion_jit(self.ub, self.vb,
-            Dg.d_dx[:,:-1], Dg.c_dy[:-1,:],Dg.rdx, Dg.rdy,80000
-            )
-        return pgf_u + hduk, pgf_v + hdvk
         
     def _postprocess(self) -> None:
         """Post-processing after completing one barotropic step"""
@@ -189,7 +187,7 @@ def add_barotropic_methods(cls):
         self.isb += 1
         
         # Update previous step values
-        self.ubp = self.ub
+        self.ubp = self.ub  
         self.vbp = self.vb  
         self.h0p = self.h0
         
@@ -200,18 +198,29 @@ def add_barotropic_methods(cls):
     # LMARS methods (non-JIT wrapper methods)
     def _lmars_get_celerity(self) -> None:
         """Get LMARS celerity"""
-        self.lmars.get_celerity(self.h0)
+        self.celerity_x, self.celerity_y = get_celerity_jit(self.h0, Dg.dzph_x, Dg.dzph_y)
     
     def _lmars_add_vel_vis(self) -> None:
         """Add LMARS velocity viscosity"""
-        self.lmars.get_vel_vis_2d(self.h0)
-        self.lmars.add_vel_vis(self.ub_cx, self.vb_cy)
-    
+        self.ub_cx, self.vb_cy = get_vel_vis_2d_jit(
+            self.celerity_x, self.celerity_y, self.h0, 
+            self.ub_cx, self.vb_cy
+        )
+
     def _lmars_add_pgf_vis(self, pgf_u: jax.Array, pgf_v: jax.Array) -> Tuple[jax.Array, jax.Array]:
         """Add LMARS PGF viscosity"""
-        self.lmars.get_pgf_vis_2d(self.ub, self.vb)
-        self.lmars.add_pgf_vis(pgf_u, pgf_v)
-        return pgf_u, pgf_v
+
+        return get_pgf_vis_2d_jit(
+            self.celerity_x, self.celerity_y, Dg.rdx, Dg.rdy, 
+            self.ub_ct, self.vb_ct, pgf_u, pgf_v
+        )
+
+    # explicit viscosity now not used
+    # def _add_hmix(self, pgf_u: jax.Array, pgf_v: jax.Array) -> Tuple[jax.Array, jax.Array]:
+    #     hduk, hdvk = _horizontal_diffusion_jit(self.ub, self.vb,
+    #         Dg.c_dx[:-1,:], Dg.d_dy[:,:-1],Dg.rdx, Dg.rdy,0
+    #         )
+    #     return pgf_u + hduk, pgf_v + hdvk
     
     # Add all methods to the class
     cls.barotr_rk2 = barotr_rk2
@@ -228,5 +237,5 @@ def add_barotropic_methods(cls):
     cls._lmars_get_celerity = _lmars_get_celerity
     cls._lmars_add_vel_vis = _lmars_add_vel_vis
     cls._lmars_add_pgf_vis = _lmars_add_pgf_vis
-    cls._add_hmix = _add_hmix
+    #cls._add_hmix = _add_hmix
     return cls

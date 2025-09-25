@@ -30,7 +30,7 @@ def main(debug_mode=False):
         if not debug_mode:
             # Normal mode: run LICOM simulation
             Schedule.run(licom.momentum)
-            #pass
+            pass
         else:
             # Debug mode: run debug functionality with existing initialization
             print("Running in debug mode...")

@@ -29,17 +29,18 @@ class Schedule:
         cls.total_baroclinic_steps: int = namelist._total_baroclinic_steps
         cls.routines: list = ["barotropic", "baroclinic", "tracer"] if routines is None else routines
         cls.current_time: Timer = Timer(namelist._start_datetime, namelist.baroclinic_dt)
-        cls.diag_interval: int = 3600 / namelist.baroclinic_dt * namelist.diag_freq
+        cls.diag_interval: int = 3600 / namelist.baroclinic_dt * namelist.diag_freq if namelist.diag_freq is not None else None
 
     @classmethod
     def run(cls, momentum: Momentum) -> None:
         """
         Total number of baroclinic steps (outer loop)
-        """
+        """ 
+
         for bc_step in range(cls.total_baroclinic_steps):
 
             # Diagnostics
-            if bc_step % cls.diag_interval == 0:
+            if cls.diag_interval is not None and bc_step % cls.diag_interval == 0:
                 if Dg.mp.pe == 0:
                     print(f"Time: {cls.current_time.prev_dt.strftime('%Y-%m-%d-%H')}")
                 momentum.print_global_diag()

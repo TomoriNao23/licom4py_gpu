@@ -52,7 +52,7 @@ class Initial:
         # schedule init
         Schedule.init(self.namelist, ["barotropic"])
 
-        print("Initialization completed") if (FMS_chtholly.mp.pe == 0) else None
+        print("Initialization completed successfully") if (FMS_chtholly.mp.pe == 0) else None
 
     def __del__(self):
         """

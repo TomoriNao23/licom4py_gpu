@@ -32,7 +32,7 @@ def duogrid_cal(cls):
         """
         cls._init_inner_outer_fields()
         cls._ocean_depth()
-        cls._coriolis_parameter()
+        #cls._coriolis_parameter()
         # other calculations here ...
         # cls._init_other_calculations()
     

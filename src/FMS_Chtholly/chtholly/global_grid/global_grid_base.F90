@@ -22,6 +22,7 @@ module global_grid_base_mod
     use global_grid_gen_vec_mod,    only: global_grid_gen_elonlat
     use global_grid_gen_vec_mod,    only: global_grid_gen_mat
     use global_grid_gen_k2e_mod,    only: global_grid_gen_k2e
+    use constants_mod,      only: OMEGA,RADIUS
 
     implicit none
     private
@@ -108,7 +109,8 @@ contains
 
         integer :: isd, ied, jsd, jed
         integer :: i, j, n, ii, jj
-
+        real :: alpha, lon, lat, ubar
+        real, dimension(2) :: u_rll, u_co2
         n = gg%tile
 
         do j = jsd, jed
@@ -174,6 +176,42 @@ contains
         gg%d_dx_dg(i,j) = gg%ext_dx(ii,jj,n)+gg%ext_dx(ii+1,jj,n)
         end do
         end do
+
+        do j = jsd, jed
+        do i = isd+1, ied
+            ii = i*2-2; jj = j*2
+            gg%c_dx_dg(i,j) = gg%ext_dx(ii,jj,n)+gg%ext_dx(ii+1,jj,n)
+        enddo
+        enddo
+
+        do j = jsd+1, jed
+        do i = isd, ied
+            ii = i*2; jj = j*2-2
+            gg%d_dy_dg(i,j) = gg%ext_dy(ii,jj,n)+gg%ext_dy(ii,jj+1,n)
+        enddo
+        enddo
+
+        alpha = 0.0
+        ubar = 1.0
+         do j = jsd,jed
+            do i = isd,ied
+                ! ext
+                lon = gg%a_pt_dg(1,i,j)
+                lat = gg%a_pt_dg(2,i,j)
+                !a_f
+                gg%a_f_dg(i,j) = 2.*OMEGA*(-1.*cos(lon)*cos(lat)*sin(alpha) + &
+                    sin(lat)*cos(alpha) )
+                u_rll(1) = ubar * (cos(alpha)*cos(lat) + &
+                    sin(alpha)*cos(lon)*sin(lat))
+                u_rll(2) = -ubar * sin(alpha)*sin(lon)
+                u_co2 = matmul(gg%a_l2c_dg(:,:,i,j), u_rll)
+                ! ub, vb
+                gg%ub(i,j) = u_co2(1)
+                gg%vb(i,j) = u_co2(2)
+                
+            enddo
+        enddo
+       
     end subroutine global_grid_chtholly
 end module global_grid_base_mod
     

@@ -13,23 +13,18 @@ class Momentum(MomentumData):
         super().__init__()
 
         # Initialize some commonly used scalars/parameters
-        self.isb = 0              # Barotropic step counter
-        self.nbb = Dg.mp.nbb      # Number of barotropic blocks
-        self.rk_barotr = Dg.mp.rk_barotr # Runge-Kutta order for barotropic time stepping
-        self.dtb = Dg.mp.dtb      # Barotropic time step
-        
-        # Physical constants (these might be moved to a constants module)
-        self.grav = 9.8           # Gravitational acceleration
-
-        # Initialize LMARS
-        from momentum.lmars import LMARS
-        self.lmars = LMARS()
+        ## Barotropic step counter
+        self.isb = 0         
+        ## Number of barotropic blocks(time.baroclinic/time.barotropic)     
+        self.nbb = Dg.mp.nbb
+        ## Barotropic time step
+        self.dtb = Dg.mp.dtb
 
         # barotropic method selection
-        self.barotr = self.barotr_rk2 if self.rk_barotr == 2 else self.barotr_rk3
+        self.barotr = self.barotr_rk2 if Dg.mp.rk_barotr == 2 else self.barotr_rk3
 
         # initialize the fields
-        initialize_test_velocity_field(test_case=Dg.mp.case, momentum=self)
+        initialize_test_velocity_field(momentum=self, test_case=Dg.mp.case)
 
 
     

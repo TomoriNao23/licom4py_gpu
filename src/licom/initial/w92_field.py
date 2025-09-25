@@ -16,7 +16,9 @@ from typing import Tuple
 
 # Local application imports
 from backend.calculation.field import Field
+from backend.cube_grid.use_mpp import FMS_chtholly
 from duogrid.duogrid import Duogrid as Dg
+
 
 
 @functools.partial(jax.jit, static_argnums=())
@@ -87,11 +89,12 @@ def cubed_to_spherical_velocity_field(u_cubed: Field.datatype,
     return u_lon, u_lat
 
 
-def initialize_test_velocity_field(test_case: str = 'w92case2', momentum = None) -> None:
+def initialize_test_velocity_field(momentum = None, test_case: str = 'w92case2') -> None:
     """
     Initialize test velocity fields for validation and testing.
     
     Args:
+        momentum: Momentum object
         test_case: Type of test case to initialize
                   
     Returns:
@@ -123,10 +126,16 @@ def initialize_test_velocity_field(test_case: str = 'w92case2', momentum = None)
             )/grav
         )
 
+        # extend halo
+        momentum.ub, momentum.vb = FMS_chtholly.ext_vector(momentum.ub, momentum.vb)
+        momentum.h0 = FMS_chtholly.ext_scalar(momentum.h0)
+
         # ubp, vbp, h0p
         momentum.ubp = momentum.ubp.at[:].set(momentum.ub)
         momentum.vbp = momentum.vbp.at[:].set(momentum.vb)
         momentum.h0p = momentum.h0p.at[:].set(momentum.h0)
+
+
 
     else:
         raise ValueError(f"Unknown test case: {test_case}")

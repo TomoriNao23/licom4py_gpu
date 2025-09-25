@@ -48,7 +48,7 @@ class Duogrid:
         cls._map = {"nx": mp.nx, "ng": mp.ng, 
             "isd": mp.isd, "ied": mp.ied, 
             "jsd": mp.jsd, "jed": mp.jed, 
-            "tile": mp.tile, "grid_type": 2}
+            "tile": mp.tile, "grid_type": 0}
         cls._init_from_cfms_global_grid()
         
         # Initialize calculation fields using decorator
@@ -98,6 +98,9 @@ class Duogrid:
         cls.rdx = Field.array(a["rdx"]) 
         cls.rdy = Field.array(a["rdy"]) 
         cls.k2e_loc = Field.array(a["k2e_loc"])
+        cls.a_f = Field.array(a["a_f"])
+        cls.ub = Field.array(a["ub"])
+        cls.vb = Field.array(a["vb"])
         
         # assign A-grid 3D (store in shape (ni, nj, 2))
         cls.k2e_coef = Field.array(np.transpose(a["k2e_coef"], (1, 2, 0)))
@@ -119,6 +122,7 @@ class Duogrid:
         cls.c_sina = Field.array(bcd["c_sina"]) 
         cls.c_cosa = Field.array(bcd["c_cosa"]) 
         cls.c_dy = Field.array(bcd["c_dy"]) 
+        cls.c_dx = Field.array(bcd["c_dx"])
 
         cls.d_gco = Field.array(np.transpose(bcd["d_gco"], (2, 3, 0, 1)))
         cls.d_gct = Field.array(np.transpose(bcd["d_gct"], (2, 3, 0, 1)))
@@ -127,3 +131,4 @@ class Duogrid:
         cls.d_sina = Field.array(bcd["d_sina"]) 
         cls.d_cosa = Field.array(bcd["d_cosa"]) 
         cls.d_dx = Field.array(bcd["d_dx"])
+        cls.d_dy = Field.array(bcd["d_dy"])
