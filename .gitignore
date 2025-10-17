@@ -9,8 +9,6 @@ logs/
 *.o
 *.mod
 *.a
-*.so
-*.dylib
 *.exe
 *.out
 
@@ -26,7 +24,6 @@ CMakeCache.txt
 CMakeFiles/
 CMakeScripts/
 Testing/
-Makefile
 cmake_install.cmake
 install_manifest.txt
 compile_commands.json
@@ -50,7 +47,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+lib/modules
 lib64/
 parts/
 sdist/

@@ -15,6 +15,7 @@ import jax
 import jax.numpy as jnp
 
 # Standard library imports
+from typing import Any
 from typing import Tuple
 
 # Local application imports
@@ -25,8 +26,8 @@ from operators.poly import vector_interpolation_ew, vector_interpolation_ns
 
 @jax.jit
 def get_celerity_jit(
-    h : Field.datatype, 
-    dzph_x : Field.datatype, dzph_y : Field.datatype) -> Tuple[Field.datatype, Field.datatype]:
+    h : Any, 
+    dzph_x : Any, dzph_y : Any) -> Tuple[Any, Any]:
     """
     Get the celerity of the ocean current.
     TODO: need to add the topography.
@@ -74,9 +75,9 @@ def get_celerity_jit(
 
 @jax.jit
 def get_vel_vis_2d_jit(
-    celerity_x : Field.datatype, celerity_y : Field.datatype, 
-    h : Field.datatype, 
-    u : Field.datatype, v : Field.datatype) -> Tuple[Field.datatype, Field.datatype]:
+    celerity_x : Any, celerity_y : Any, 
+    h : Any, 
+    u : Any, v : Any) -> Tuple[Any, Any]:
     """
     Get the Viscosity.velocity of the ocean current.
     TODO: need to add the topography.
@@ -112,10 +113,10 @@ def get_vel_vis_2d_jit(
 
 @jax.jit
 def get_pgf_vis_2d_jit(
-    celerity_x : Field.datatype, celerity_y : Field.datatype, 
-    rdx : Field.datatype, rdy : Field.datatype,
-    u : Field.datatype, v : Field.datatype, 
-    pgf_u : Field.datatype, pgf_v : Field.datatype) -> Tuple[Field.datatype, Field.datatype]:
+    celerity_x : Any, celerity_y : Any, 
+    rdx : Any, rdy : Any,
+    u : Any, v : Any, 
+    pgf_u : Any, pgf_v : Any) -> Tuple[Any, Any]:
     """
     Get the Viscosity.pressure gradient force of the ocean current.
 

@@ -10,6 +10,7 @@ Updated: 2025-09-24
 REVISION HISTORY:
     22/09/2025 - Python port with high-performance JAX implementation
     23/09/2025 - split into barotr_jit.py and barotr.py
+    25/09/2025 - Chtholly debug and add LMARS
 """
 
 # Third-party imports

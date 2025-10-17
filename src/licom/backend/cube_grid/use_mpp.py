@@ -14,6 +14,7 @@ import os
 import functools
 from typing import Callable
 
+# Third-party imports
 import jax.numpy as jnp
 import jax
 
@@ -55,7 +56,8 @@ class FMS_chtholly:
         # Get the library path automatically
         current_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.join(current_dir, "..", "..", "..", "..")
-        lib_path = os.path.join(project_root, "lib", "lib", "libfms_unified.dylib")
+        lib_path = os.path.join(project_root, "lib", "lib", "libfms_unified.so")
+        #lib_path = os.path.join("/data/yyq/data01/mls/licom4py/licom4py/lib/lib/libfms_unified.so")
         cls._lib = ctypes.CDLL(lib_path)
         cls._define_c_size()
 

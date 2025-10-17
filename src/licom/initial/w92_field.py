@@ -7,7 +7,10 @@ Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-22
 """
 
+# Standard library imports
+from typing import Any
 from typing import Optional
+
 # Third-party imports
 import jax
 import jax.numpy as jnp
@@ -22,7 +25,7 @@ from duogrid.duogrid import Duogrid as Dg
 
 
 @functools.partial(jax.jit, static_argnums=())
-def spherical_to_cubed_velocity_field(ubar: float, alpha:Optional[float] = 0.0) -> Tuple[Field.datatype, Field.datatype]:
+def spherical_to_cubed_velocity_field(ubar: float, alpha:Optional[float] = 0.0) -> Tuple[Any, Any]:
     """
     Convert uniform spherical velocity field to cubed-sphere grid velocity field.
     
@@ -64,8 +67,8 @@ def spherical_to_cubed_velocity_field(ubar: float, alpha:Optional[float] = 0.0) 
 
 
 @functools.partial(jax.jit, static_argnums=())
-def cubed_to_spherical_velocity_field(u_cubed: Field.datatype, 
-                                     v_cubed: Field.datatype) -> Tuple[Field.datatype, Field.datatype]:
+def cubed_to_spherical_velocity_field(u_cubed: Any, 
+                                     v_cubed: Any) -> Tuple[Any, Any]:
     """
     Convert cubed-sphere velocity field to spherical (lat-lon) velocity field.
     
@@ -142,8 +145,8 @@ def initialize_test_velocity_field(momentum = None, test_case: str = 'w92case2')
 
 
 @functools.partial(jax.jit, static_argnums=())
-def spherical_to_cubed_velocity_field_from_components(u_spherical: Field.datatype, 
-                                                     v_spherical: Field.datatype) -> Tuple[Field.datatype, Field.datatype]:
+def spherical_to_cubed_velocity_field_from_components(u_spherical: Any, 
+                                                     v_spherical: Any) -> Tuple[Any, Any]:
     """
     Convert spherical velocity components to cubed-sphere coordinates.
     

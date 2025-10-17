@@ -17,6 +17,9 @@ from datatype import MpDate
 from ._c_duogrid_function import duogrid_c_method
 from .duogrid_cal import duogrid_cal
 
+# Standard library imports
+from typing import Any
+
 @duogrid_c_method
 @duogrid_cal
 class Duogrid:

@@ -54,10 +54,10 @@ class Schedule:
                 return
 
             # Tracer process
-            if cls.tracer_interval is not None:
-                if bc_step % cls.tracer_interval == 0:
-                    if "tracer" in cls.routines:
-                        return
+            if ("tracer" in cls.routines) and \
+                (cls.tracer_interval is not None) and \
+                (bc_step % cls.tracer_interval == 0):
+                    return
 
             # Advance current time after each baroclinic step
             cls.current_time.time_now()
