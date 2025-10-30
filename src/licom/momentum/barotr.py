@@ -50,6 +50,7 @@ def add_barotropic_methods(cls):
     """
     
     # Core timestepping methods
+    @timed('total')
     def barotr_rk2(self) -> None:
         """Barotropic Time Stepping Using 2nd-order Runge-Kutta"""
         beta_d = 0.0
@@ -82,38 +83,43 @@ def add_barotropic_methods(cls):
     
     def _step_rk(self, dt: float, beta_d: float, is_laststep: bool, isnc: bool) -> None:
         """Kernel of Barotropic Time Stepping in RK"""
-        # Store h0 for FB scheme
-        _h0_tem = self.h0
         
-        # LMARS celerity
-        self._lmars_get_celerity()
-        
-        # Vector transformation and communication
-        self._vector_transform_and_comm()
-        
-        # Add LMARS velocity viscosity
-        self._lmars_add_vel_vis()
+        with Timer('remap'):
+            # Store h0 for FB scheme
+            _h0_tem = self.h0
+
+            # LMARS celerity
+            self._lmars_get_celerity()
+            
+            # Vector transformation and communication
+            self._vector_transform_and_comm()
+            
+            # Add LMARS velocity viscosity
+            self._lmars_add_vel_vis()
 
         # Predict SSH
-        self._predict_ssh(dt, is_laststep)
+        with Timer('ssh.calculation'):
+            self._predict_ssh(dt, is_laststep)
         
         # Extend scalar boundary
-        self.h0 = FMS_chtholly.ext_scalar(self.h0)
-
-        # Forward-Backward scheme
-        _h0_tem = _fb_scheme_jit(self.h0, _h0_tem, beta_d)
+        with Timer('ssh.communication'):
+            self.h0 = FMS_chtholly.ext_scalar(self.h0)
         
-        # Predict velocities
-        self._predict_uv(dt, _h0_tem)
+        with Timer('uv.calculation'):
+            # Forward-Backward scheme
+            _h0_tem = _fb_scheme_jit(self.h0, _h0_tem, beta_d)
+
+            # Predict velocities
+            self._predict_uv(dt, _h0_tem)
         
         # Extend vector boundary
-        self.ub, self.vb = FMS_chtholly.ext_vector(self.ub, self.vb)
+        with Timer('uv.communication'):
+            self.ub, self.vb = FMS_chtholly.ext_vector(self.ub, self.vb)
         
-        # Update advection (last step only)
-        if is_laststep and isnc:
-            self.advx, self.advy = self._calculate_advection()
+        # Update advection (last step only for bclinc)
+        # if is_laststep and isnc:
+        #     self.advx, self.advy = self._calculate_advection()
 
-    @timed("ssh_predict")
     def _predict_ssh(self, dt: float, is_laststep: bool) -> None:
         """SSH prediction"""
         # Calculate flux
@@ -129,7 +135,6 @@ def add_barotropic_methods(cls):
         # Update SSH
         self.h0 = _update_ssh_jit(self.h0p, div_out, dt)
 
-    @timed("uv_predict")
     def _predict_uv(self, dt: float, h_old: jax.Array) -> None:
         """Velocity prediction"""
         # Calculate pressure gradient force

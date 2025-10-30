@@ -148,7 +148,13 @@ class SimpleMPITimer:
         
         if rank == 0:
             # Calculate total time
-            total_time = sum(item['mean'] for item in aggregated.values())
+            if 'total' in aggregated:
+                total_time = aggregated.get('total', {}).get('mean', 0)
+                del aggregated['total']
+                total_percet = sum(item['mean'] for item in aggregated.values())/total_time * 100.0
+            else:
+                total_time = sum(item['mean'] for item in aggregated.values())
+                total_percet = 100.0
             
             # Sort by mean time
             results = []
@@ -180,7 +186,7 @@ class SimpleMPITimer:
                       f"{item['percent']:>7.2f}%")
             
             print(f"{'-'*80}")
-            print(f"{'TOTAL (mean)':<30} {total_time:>10.4f} {'':>10} {'':>10} {100.0:>7.2f}%")
+            print(f"{'TOTAL (mean)':<30} {total_time:>10.4f} {'':>10} {'':>10} {total_percet:>7.2f}%")
             print(f"{'='*80}\n")
             
             # Print load imbalance info

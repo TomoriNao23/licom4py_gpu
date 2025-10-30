@@ -60,7 +60,16 @@ class FMS_chtholly:
         # Get the library path automatically
         current_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.join(current_dir, "..", "..", "..", "..")
-        lib_path = os.path.join(project_root, "lib", "lib", "libfms_unified.so")
+        # Automatically support both .so and .dylib extensions
+        lib_dir = os.path.join(project_root, "lib", "lib")
+        so_path = os.path.join(lib_dir, "libfms_unified.so")
+        dylib_path = os.path.join(lib_dir, "libfms_unified.dylib")
+        if os.path.exists(so_path):
+            lib_path = so_path
+        elif os.path.exists(dylib_path):
+            lib_path = dylib_path
+        else:
+            raise FileNotFoundError(f"Cannot find shared library: {so_path} or {dylib_path}")
         #lib_path = os.path.join("/data/yyq/data01/mls/licom4py/licom4py/lib/lib/libfms_unified.so")
         cls._lib = ctypes.CDLL(lib_path)
         cls._define_c_size()
