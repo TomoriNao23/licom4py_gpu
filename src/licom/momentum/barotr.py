@@ -5,12 +5,13 @@ Description: High-performance barotropic time stepping methods for Momentum clas
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-22
-Updated: 2025-09-24
+Updated: 2025-10-30
 
 REVISION HISTORY:
     22/09/2025 - Python port with high-performance JAX implementation
     23/09/2025 - split into barotr_jit.py and barotr.py
-    25/09/2025 - Chtholly debug and add LMARS
+    25/09/2025 - debug and add LMARS
+    30/10/2025 - add timer to each part
 """
 
 # Third-party imports
@@ -84,7 +85,7 @@ def add_barotropic_methods(cls):
     def _step_rk(self, dt: float, beta_d: float, is_laststep: bool, isnc: bool) -> None:
         """Kernel of Barotropic Time Stepping in RK"""
         
-        with Timer('remap'):
+        with Timer('remap.calculation'):
             # Store h0 for FB scheme
             _h0_tem = self.h0
 
@@ -92,17 +93,17 @@ def add_barotropic_methods(cls):
             self._lmars_get_celerity()
             
             # Vector transformation and communication
-            self._vector_transform_and_comm()
+        self._vector_transform_and_comm()
             
+        with Timer('remap.calculation'):
             # Add LMARS velocity viscosity
             self._lmars_add_vel_vis()
 
         # Predict SSH
-        with Timer('ssh.calculation'):
-            self._predict_ssh(dt, is_laststep)
+        self._predict_ssh(dt, is_laststep)
         
-        # Extend scalar boundary
         with Timer('ssh.communication'):
+            # Extend scalar boundary
             self.h0 = FMS_chtholly.ext_scalar(self.h0)
         
         with Timer('uv.calculation'):
@@ -112,8 +113,8 @@ def add_barotropic_methods(cls):
             # Predict velocities
             self._predict_uv(dt, _h0_tem)
         
-        # Extend vector boundary
         with Timer('uv.communication'):
+            # Extend vector boundary
             self.ub, self.vb = FMS_chtholly.ext_vector(self.ub, self.vb)
         
         # Update advection (last step only for bclinc)
@@ -122,18 +123,21 @@ def add_barotropic_methods(cls):
 
     def _predict_ssh(self, dt: float, is_laststep: bool) -> None:
         """SSH prediction"""
-        # Calculate flux
-        flux_hu, flux_hv = self._flux_calculation()
+        with Timer('ssh.calculation'):
+            # Calculate flux
+            flux_hu, flux_hv = self._flux_calculation()
             
-        # Communication (non-JIT part handled separately)
-        if is_laststep:
-            flux_hu, flux_hv = FMS_chtholly.communication2d(flux_hu, flux_hv)
+        with Timer('ssh.communication'):
+            # Communication (non-JIT part handled separately)
+            if is_laststep:
+                flux_hu, flux_hv = FMS_chtholly.communication2d(flux_hu, flux_hv)
         
-        # Calculate divergence
-        div_out = agrid_div(flux_hu, flux_hv)
+        with Timer('ssh.calculation'):
+            # Calculate divergence
+            div_out = agrid_div(flux_hu, flux_hv)
 
-        # Update SSH
-        self.h0 = _update_ssh_jit(self.h0p, div_out, dt)
+            # Update SSH
+            self.h0 = _update_ssh_jit(self.h0p, div_out, dt)
 
     def _predict_uv(self, dt: float, h_old: jax.Array) -> None:
         """Velocity prediction"""

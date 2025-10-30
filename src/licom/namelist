@@ -4,6 +4,7 @@ baroclinic_dt = 3600
 tracer_interval = 1
 rk_barotr = 2
 case = w92case2
+#diag_freq = 72
 
 [backend]
 platform = cpu
@@ -15,7 +16,7 @@ start_year = 2000
 start_month = 1
 start_day = 1
 #integration_hours = 2
-integration_days = 100
+integration_days = 3
 #integration_months = 24
 
 [grid]

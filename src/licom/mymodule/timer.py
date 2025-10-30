@@ -3,7 +3,7 @@ File: simple_mpi_timer.py
 Description: Simplified MPI-aware timing tool for barotropic module
     Focus on total time and percentage only, with MPI gather support
 
-Author: Simplified Performance Tool
+Author: Chtholly
 Created: 2025-10-30
 """
 
@@ -33,14 +33,14 @@ class SimpleMPITimer:
         """Start timing"""
         if not self.enabled:
             return
-        jax.block_until_ready(jax.numpy.array(0))
+        #jax.block_until_ready(jax.numpy.array(0))
         self._start_times[name] = time.perf_counter()
     
     def stop(self, name: str):
         """Stop timing"""
         if not self.enabled:
             return
-        jax.block_until_ready(jax.numpy.array(0))
+        #jax.block_until_ready(jax.numpy.array(0))
         if name in self._start_times:
             elapsed = time.perf_counter() - self._start_times[name]
             self.timings[name] += elapsed
@@ -176,7 +176,7 @@ class SimpleMPITimer:
             print(f"\n{'='*80}")
             print(f"MPI AGGREGATED TIMING SUMMARY (across {size} processes)")
             print(f"{'='*80}")
-            print(f"{'Component':<30} {'Mean(s)':>10} {'Min(s)':>10} {'Max(s)':>10} {'%':>8}")
+            print(f"{'Component':<30} {'Mean(s)':>10} {'Min(s)':>10} {'Max(s)':>10} {'Perc(%)':>8}")
             print(f"{'-'*80}")
             
             # Print results
@@ -186,7 +186,17 @@ class SimpleMPITimer:
                       f"{item['percent']:>7.2f}%")
             
             print(f"{'-'*80}")
-            print(f"{'TOTAL (mean)':<30} {total_time:>10.4f} {'':>10} {'':>10} {total_percet:>7.2f}%")
+            print(f"{'Total':<30} {total_time:>10.4f} {'':>10} {'':>10} {total_percet:>7.2f}%")
+            total_time_comminication = aggregated.get('ssh.communication', {}).get('mean', 0) \
+                + aggregated.get('uv.communication', {}).get('mean', 0) + \
+                + aggregated.get('remap.communication', {}).get('mean', 0)
+            total_percet_communication = total_time_comminication / total_time * 100.0
+            print(f"{'communication':<30} {total_time_comminication:>10.4f} {'':>10} {'':>10} {total_percet_communication:>7.2f}%")
+            total_time_calculation = aggregated.get('ssh.calculation', {}).get('mean', 0) \
+                + aggregated.get('uv.calculation', {}).get('mean', 0) + \
+                + aggregated.get('remap.calculation', {}).get('mean', 0)
+            total_percet_calculation = total_time_calculation / total_time * 100.0
+            print(f"{'calculation':<30} {total_time_calculation:>10.4f} {'':>10} {'':>10} {total_percet_calculation:>7.2f}%")
             print(f"{'='*80}\n")
             
             # Print load imbalance info

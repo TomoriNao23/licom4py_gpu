@@ -19,6 +19,7 @@ from typing import Tuple
 from operators.poly import vector_interpolation_ew, vector_interpolation_ns
 from duogrid.duogrid import Duogrid as Dg
 from backend.cube_grid.use_mpp import FMS_chtholly
+from mymodule.timer import timed, Timer
 
 @functools.partial(jax.jit, static_argnums=())
 def to_a_grid(u: jnp.ndarray, v: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
@@ -142,14 +143,17 @@ def vector_trans_2d(u: jnp.ndarray, v: jnp.ndarray) \
         tuple: (uct, vct, ub_cx, vb_cy, ub_cy, vb_cx) - 2D vector remapped velocities
     """
 
-    # A-grid
-    uct, vct = to_a_grid(u, v)
+    with Timer('remap.calculation'):
+        # A-grid
+        uct, vct = to_a_grid(u, v)
 
-    # C-grid.communication
-    ub_cx, vb_cy = to_c_grid(uct, vct)
-    ub_cx, vb_cy = FMS_chtholly.communication2d(ub_cx, vb_cy)
+        # C-grid.communication
+        ub_cx, vb_cy = to_c_grid(uct, vct)
+    with Timer('remap.communication'):
+        ub_cx, vb_cy = FMS_chtholly.communication2d(ub_cx, vb_cy)
 
-    # D-grid.upwind
-    ub_cy, vb_cx = to_d_grid_upwind(u, v, ub_cx, vb_cy)
+    with Timer('remap.calculation'):
+        # D-grid.upwind
+        ub_cy, vb_cx = to_d_grid_upwind(u, v, ub_cx, vb_cy)
 
     return uct, vct, ub_cx, ub_cy, vb_cx, vb_cy
