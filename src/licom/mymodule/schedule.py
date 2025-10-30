@@ -37,6 +37,14 @@ class Schedule:
         Total number of baroclinic steps (outer loop)
         """ 
 
+        from mpi4py import MPI
+        from mymodule.timer import reset_timer, print_mpi_summary, enable_timing
+
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        enable_timing(True)
+        reset_timer()
+
         for bc_step in range(cls.total_baroclinic_steps):
 
             # Diagnostics
@@ -61,3 +69,5 @@ class Schedule:
 
             # Advance current time after each baroclinic step
             cls.current_time.time_now()
+
+        print_mpi_summary(comm)

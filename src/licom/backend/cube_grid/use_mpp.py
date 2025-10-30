@@ -4,7 +4,12 @@ Description: Use the Chtholly FMS library to get the MPP configuration
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-16
-Updated: 2025-09-19 (add communication2d & ext_vector)
+Updated: 2025-09-28
+
+REVISION HISTORY:
+    16/09/2025 - Initial Python wrapper for Chtholly FMS library
+    19/09/2025 - Added communication2d and ext_vector methods
+    28/10/2025 - debug
 """
 
 
@@ -14,7 +19,6 @@ import os
 import functools
 from typing import Callable
 
-# Third-party imports
 import jax.numpy as jnp
 import jax
 
@@ -46,9 +50,9 @@ class FMS_chtholly:
     @classmethod
     def init(cls, namelist: Namelist) -> None:
 
-        cls._load_chtholly_library()
-        cls._lib.chtholly_init(namelist.nx, namelist.ny, namelist.npes_x, namelist.npes_y)
-        cls._mp_init(namelist)
+       cls._load_chtholly_library()
+       cls._lib.chtholly_init(namelist.nx, namelist.ny, namelist.npes_x, namelist.npes_y)
+       cls._mp_init(namelist)
 
     @classmethod
     def _load_chtholly_library(cls) -> None:
@@ -128,6 +132,7 @@ class FMS_chtholly:
         import jax.numpy as jnp
         import numpy as np
         import jax
+        from backend import Field
         
         # Communication functions using MPP
         def _update_domain_jax(var: jnp.ndarray) -> jnp.ndarray:
@@ -138,7 +143,7 @@ class FMS_chtholly:
             c_data = np_var.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
             cls._lib.chtholly_ext_scalar_2d(c_data)
             # Convert back to JAX array
-            return jnp.array(np_var)
+            return Field.array(np_var)
 
         # Communication functions using MPP
         def _communication2d_jax(u: jnp.ndarray, v: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
@@ -151,7 +156,7 @@ class FMS_chtholly:
             c_data_v = np_v.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
             cls._lib.chtholly_communication2d(c_data_u, c_data_v)
             # Convert back to JAX array
-            return jnp.array(np_u), jnp.array(np_v)
+            return Field.array(np_u), Field.array(np_v)
         
         # jax.jit for the transform function (pure calculation)
         @jax.jit

@@ -19,6 +19,7 @@ run:
 		echo "=========================================="; \
 		touch input.nml;\
 		export PYTHONPYCACHEPREFIX=$(PYTHONPYCACHEPREFIX); \
+        export XLA_PYTHON_CLIENT_ALLOCATOR=platform \
 		PROCS=$$(python -c "import configparser; \
 		c=configparser.ConfigParser(); \
 		c.read(\"src/licom/namelist\"); \
@@ -43,6 +44,7 @@ debug:
 		echo "Start LICOMpy in DEBUG mode..."; \
 		echo "=========================================="; \
 		export PYTHONPYCACHEPREFIX=$(PYTHONPYCACHEPREFIX); \
+		export XLA_PYTHON_CLIENT_ALLOCATOR=platform \
 		PROCS=$$(python -c "import configparser; \
 		c=configparser.ConfigParser(); \
 		c.read(\"src/licom/namelist\"); \
