@@ -5,13 +5,12 @@ Description: High-performance barotropic time stepping methods for Momentum clas
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-22
-Updated: 2025-10-30
+Updated: 2025-09-24
 
 REVISION HISTORY:
     22/09/2025 - Python port with high-performance JAX implementation
     23/09/2025 - split into barotr_jit.py and barotr.py
-    25/09/2025 - debug and add LMARS
-    30/10/2025 - add timer to each part
+    25/09/2025 - Chtholly debug and add LMARS
 """
 
 # Third-party imports
@@ -22,9 +21,9 @@ import jax.numpy as jnp
 from typing import Tuple
 
 # Local application imports
+from mymodule.timer import timed, Timer
 from backend.cube_grid.use_mpp import FMS_chtholly
 from duogrid.duogrid import Duogrid as Dg
-from mymodule.timer import timed, Timer
 from operators.agrid import agrid_div
 from operators.remap import vector_trans_2d
 from ._barotr_jit import (
@@ -51,7 +50,7 @@ def add_barotropic_methods(cls):
     """
     
     # Core timestepping methods
-    @timed('total')
+    #@timed('total')
     def barotr_rk2(self) -> None:
         """Barotropic Time Stepping Using 2nd-order Runge-Kutta"""
         beta_d = 0.0
@@ -65,7 +64,10 @@ def add_barotropic_methods(cls):
             self._step_rk(self.dtb, beta_d, True, is_nc)
             
             # Post-process
-            self._postprocess()     
+            self._postprocess()
+            # if Dg.mp.pe == 0:
+            #     print("h0*",nc,jnp.max(self.h0[3:-3,3:-3]), jnp.min(self.h0[3:-3,3:-3]), jnp.sum(self.h0[3:-3,3:-3]))        
+
     
     def barotr_rk3(self) -> None:
         """Barotropic Time Stepping Using 3rd-order Runge-Kutta"""
@@ -84,60 +86,51 @@ def add_barotropic_methods(cls):
     
     def _step_rk(self, dt: float, beta_d: float, is_laststep: bool, isnc: bool) -> None:
         """Kernel of Barotropic Time Stepping in RK"""
+        # Store h0 for FB scheme
+        _h0_tem = self.h0
         
-        with Timer('remap.calculation'):
-            # Store h0 for FB scheme
-            _h0_tem = self.h0
-
-            # LMARS celerity
-            self._lmars_get_celerity()
-            
-            # Vector transformation and communication
+        # LMARS celerity
+        self._lmars_get_celerity()
+        
+        # Vector transformation and communication
         self._vector_transform_and_comm()
-            
-        with Timer('remap.calculation'):
-            # Add LMARS velocity viscosity
-            self._lmars_add_vel_vis()
+        
+        # Add LMARS velocity viscosity
+        self._lmars_add_vel_vis()
 
         # Predict SSH
         self._predict_ssh(dt, is_laststep)
         
-        with Timer('ssh.communication'):
-            # Extend scalar boundary
-            self.h0 = FMS_chtholly.ext_scalar(self.h0)
-        
-        with Timer('uv.calculation'):
-            # Forward-Backward scheme
-            _h0_tem = _fb_scheme_jit(self.h0, _h0_tem, beta_d)
+        # Extend scalar boundary
+        self.h0 = FMS_chtholly.ext_scalar(self.h0)
 
-            # Predict velocities
-            self._predict_uv(dt, _h0_tem)
+        # Forward-Backward scheme
+        _h0_tem = _fb_scheme_jit(self.h0, _h0_tem, beta_d)
         
-        with Timer('uv.communication'):
-            # Extend vector boundary
-            self.ub, self.vb = FMS_chtholly.ext_vector(self.ub, self.vb)
+        # Predict velocities
+        self._predict_uv(dt, _h0_tem)
         
-        # Update advection (last step only for bclinc)
-        # if is_laststep and isnc:
-        #     self.advx, self.advy = self._calculate_advection()
+        # Extend vector boundary
+        self.ub, self.vb = FMS_chtholly.ext_vector(self.ub, self.vb)
+        
+        # Update advection (last step only)
+        if is_laststep and isnc:
+            self.advx, self.advy = self._calculate_advection()
 
     def _predict_ssh(self, dt: float, is_laststep: bool) -> None:
         """SSH prediction"""
-        with Timer('ssh.calculation'):
-            # Calculate flux
-            flux_hu, flux_hv = self._flux_calculation()
+        # Calculate flux
+        flux_hu, flux_hv = self._flux_calculation()
             
-        with Timer('ssh.communication'):
-            # Communication (non-JIT part handled separately)
-            if is_laststep:
-                flux_hu, flux_hv = FMS_chtholly.communication2d(flux_hu, flux_hv)
+        # Communication (non-JIT part handled separately)
+        if is_laststep:
+            flux_hu, flux_hv = FMS_chtholly.communication2d(flux_hu, flux_hv)
         
-        with Timer('ssh.calculation'):
-            # Calculate divergence
-            div_out = agrid_div(flux_hu, flux_hv)
+        # Calculate divergence
+        div_out = agrid_div(flux_hu, flux_hv)
 
-            # Update SSH
-            self.h0 = _update_ssh_jit(self.h0p, div_out, dt)
+        # Update SSH
+        self.h0 = _update_ssh_jit(self.h0p, div_out, dt)
 
     def _predict_uv(self, dt: float, h_old: jax.Array) -> None:
         """Velocity prediction"""

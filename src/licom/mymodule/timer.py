@@ -33,14 +33,14 @@ class SimpleMPITimer:
         """Start timing"""
         if not self.enabled:
             return
-        #jax.block_until_ready(jax.numpy.array(0))
+        jax.block_until_ready(jax.numpy.array(0))
         self._start_times[name] = time.perf_counter()
     
     def stop(self, name: str):
         """Stop timing"""
         if not self.enabled:
             return
-        #jax.block_until_ready(jax.numpy.array(0))
+        jax.block_until_ready(jax.numpy.array(0))
         if name in self._start_times:
             elapsed = time.perf_counter() - self._start_times[name]
             self.timings[name] += elapsed

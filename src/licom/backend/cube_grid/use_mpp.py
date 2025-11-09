@@ -23,6 +23,7 @@ import jax.numpy as jnp
 import jax
 
 # Local application imports
+from mymodule.timer import timed, Timer
 from datatype import MpDate
 from readnamelist import Namelist
 
@@ -155,6 +156,7 @@ class FMS_chtholly:
             return Field.array(np_var)
 
         # Communication functions using MPP
+        @timed('remap.communication')
         def _communication2d_jax(u: jnp.ndarray, v: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
             """Exchange vector values for JAX arrays."""
             # Convert JAX array to NumPy for C function
@@ -227,7 +229,10 @@ class FMS_chtholly:
         """
         Exchange scalar values across domain boundaries.
         """
-        return cls._cube_rmp(cls._update_domain(var))
+        with Timer('remap.communication'):
+            a = cls._update_domain(var)
+        b = cls._cube_rmp(a)
+        return b
 
     @classmethod
     def ext_vector(cls, u, v):
@@ -235,7 +240,6 @@ class FMS_chtholly:
         Exchange vector values across domain boundaries.
         """
         from duogrid.duogrid import Duogrid as Dg
-
         ull, vll = cls._transform(u, v, Dg.a_c2l, Dg.inner)
         ull = cls.ext_scalar(ull)
         vll = cls.ext_scalar(vll)
