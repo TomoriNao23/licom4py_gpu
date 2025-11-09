@@ -15,8 +15,8 @@ precision = double
 start_year = 2000
 start_month = 1
 start_day = 1
+integration_days = 3
 #integration_hours = 2
-integration_days = 30
 #integration_months = 24
 
 [grid]
@@ -27,3 +27,7 @@ npz = 1
 [mpi]
 npes_x = 1
 npes_y = 1
+
+[diagnostics]
+ diag_freq = 24
+ timer = False

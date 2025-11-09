@@ -39,5 +39,7 @@ MpDate = NamedTuple(
         ('nbb', int),      # Number of barotropic blocks
         ('rk_barotr', int), # Runge-Kutta order for barotropic time stepping
         ('case', str),     # Case name
+        ('timer', bool),   # Timer flag
+        ('diag_freq', int), # Diagnostic frequency
     ]
 )

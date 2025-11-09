@@ -21,7 +21,6 @@ import jax.numpy as jnp
 from typing import Tuple
 
 # Local application imports
-from mymodule.timer import timed, Timer
 from backend.cube_grid.use_mpp import FMS_chtholly
 from duogrid.duogrid import Duogrid as Dg
 from operators.agrid import agrid_div
@@ -50,7 +49,6 @@ def add_barotropic_methods(cls):
     """
     
     # Core timestepping methods
-    #@timed('total')
     def barotr_rk2(self) -> None:
         """Barotropic Time Stepping Using 2nd-order Runge-Kutta"""
         beta_d = 0.0

@@ -25,11 +25,13 @@ class Schedule:
             routines: List of routines to execute
             current_time: Timer object
         """
+        cls.current_time: Timer = Timer(namelist._start_datetime, namelist.baroclinic_dt)
         cls.tracer_interval: Union[int, None] = namelist.tracer_interval
         cls.total_baroclinic_steps: int = namelist._total_baroclinic_steps
-        cls.routines: list = ["barotropic", "baroclinic", "tracer"] if routines is None else routines
-        cls.current_time: Timer = Timer(namelist._start_datetime, namelist.baroclinic_dt)
-        cls.diag_interval: int = 3600 / namelist.baroclinic_dt * namelist.diag_freq if namelist.diag_freq is not None else None
+        cls.routines: list = ["barotropic", "baroclinic", "tracer"] \
+            if routines is None else routines
+        cls.diag_interval: int = 3600 / namelist.baroclinic_dt * namelist.diag_freq \
+            if namelist.diag_freq is not None and namelist.diag_freq > 0 else None
 
     @classmethod
     def run(cls, momentum: Momentum) -> None:
@@ -42,7 +44,7 @@ class Schedule:
 
         comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
-        enable_timing(True)
+        enable_timing(Dg.mp.timer)
         reset_timer()
 
         for bc_step in range(cls.total_baroclinic_steps):
@@ -70,4 +72,5 @@ class Schedule:
             # Advance current time after each baroclinic step
             cls.current_time.time_now()
 
-        print_mpi_summary(comm)
+        if Dg.mp.timer:
+            print_mpi_summary(comm)

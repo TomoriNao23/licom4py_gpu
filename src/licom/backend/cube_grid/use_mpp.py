@@ -21,9 +21,9 @@ from typing import Callable
 
 import jax.numpy as jnp
 import jax
+from jax.experimental import io_callback
 
 # Local application imports
-from mymodule.timer import timed, Timer
 from datatype import MpDate
 from readnamelist import Namelist
 
@@ -98,6 +98,8 @@ class FMS_chtholly:
             'nbb': int(namelist.baroclinic_dt / namelist.barotropic_dt),
             'rk_barotr': namelist.rk_barotr,
             'case': namelist.case,
+            'diag_freq': namelist.diag_freq,
+            'timer': namelist.timer,
             # from Chtholly FMS wrapper
             'tile': cls._lib.chtholly_get_tile(),
             'pe': cls._lib.chtholly_get_mpp_pe(),
@@ -117,8 +119,8 @@ class FMS_chtholly:
         cls._rmp_flag()
 
         # Initialize library functions for backend
-        (lambda lib: cls._setup_jax() if lib == 'jax' 
-         else cls._setup_numpy())(cls.mp.lib)
+        cls._setup_jax()
+        cls._setup_numpy()
 
         return None
     
@@ -145,29 +147,30 @@ class FMS_chtholly:
         from backend import Field
         
         # Communication functions using MPP
+        @jax.jit
         def _update_domain_jax(var: jnp.ndarray) -> jnp.ndarray:
             """Exchange scalar values for JAX arrays."""
-            # Convert JAX array to NumPy for C function
-            np_var = np.array(var)
-            # Use C function to exchange scalar values
-            c_data = np_var.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-            cls._lib.chtholly_ext_scalar_2d(c_data)
-            # Convert back to JAX array
-            return Field.array(np_var)
+            return(
+                io_callback(
+                cls._update_domain_numpy,
+                var,
+                var,
+                ordered=True
+                )
+            )
 
         # Communication functions using MPP
-        @timed('remap.communication')
+        @jax.jit
         def _communication2d_jax(u: jnp.ndarray, v: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
             """Exchange vector values for JAX arrays."""
-            # Convert JAX array to NumPy for C function
-            np_u = np.array(u)
-            np_v = np.array(v)
-            # Use C function to exchange vector values
-            c_data_u = np_u.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-            c_data_v = np_v.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-            cls._lib.chtholly_communication2d(c_data_u, c_data_v)
-            # Convert back to JAX array
-            return Field.array(np_u), Field.array(np_v)
+            return(
+                io_callback(
+                cls._communication2d_numpy,
+                (u,v),
+                u,v,
+                ordered=True
+                )
+            )
         
         # jax.jit for the transform function (pure calculation)
         @jax.jit
@@ -192,7 +195,7 @@ class FMS_chtholly:
         import numpy as np
         
         # Communication functions using MPP
-        def _update_domain_numpy(var: np.ndarray) -> np.ndarray:
+        def _update_domain_numpy(var):
             """Exchange scalar values for NumPy arrays."""
             # Convert NumPy array to C pointer
             c_data = var.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
@@ -200,7 +203,7 @@ class FMS_chtholly:
             return var
 
         # Communication functions using MPP
-        def _communication2d_numpy(u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        def _communication2d_numpy(u, v):
             """Exchange vector values for NumPy arrays."""
             # Convert NumPy array to C pointer
             c_data_u = u.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
@@ -217,10 +220,10 @@ class FMS_chtholly:
             return ull, vll
         
         # private functions for numpy backend
-        cls._update_domain = _update_domain_numpy
-        cls._transform = _transform
+        cls._update_domain_numpy = lambda x:_update_domain_numpy(np.array(x))
+        cls._transform_numpy = _transform
         # public functions for numpy backend
-        cls.communication2d = _communication2d_numpy
+        cls._communication2d_numpy = lambda x,y:_communication2d_numpy(np.array(x), np.array(y))
 
         return None
 
@@ -229,10 +232,7 @@ class FMS_chtholly:
         """
         Exchange scalar values across domain boundaries.
         """
-        with Timer('remap.communication'):
-            a = cls._update_domain(var)
-        b = cls._cube_rmp(a)
-        return b
+        return cls._cube_rmp(cls._update_domain(var))
 
     @classmethod
     def ext_vector(cls, u, v):
@@ -240,6 +240,7 @@ class FMS_chtholly:
         Exchange vector values across domain boundaries.
         """
         from duogrid.duogrid import Duogrid as Dg
+
         ull, vll = cls._transform(u, v, Dg.a_c2l, Dg.inner)
         ull = cls.ext_scalar(ull)
         vll = cls.ext_scalar(vll)

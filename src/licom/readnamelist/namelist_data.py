@@ -23,7 +23,7 @@ from .validators import validate_namelist_class
 class Namelist(TimeConfig, LoaderMixin):
     """Main namelist configuration class inheriting time configuration."""
 
-    namelist_local = ["run_params", "backend", "time_params", "grid", "mpi"]
+    namelist_local = ["run_params", "backend", "time_params", "grid", "mpi", "diagnostics"]
 
     # run_params section
     barotropic_dt: int = field(default=150, metadata={"section": namelist_local[0]})
@@ -31,7 +31,6 @@ class Namelist(TimeConfig, LoaderMixin):
     tracer_interval: Optional[int] = field(default=None, metadata={"section": namelist_local[0]})
     rk_barotr: int = field(default=2, metadata={"section": namelist_local[0]})
     case: str = field(default='w92case2', metadata={"section": namelist_local[0]})
-    diag_freq: Optional[int] = field(default=None, metadata={"section": namelist_local[0]})
 
     # backend section
     lib: str = field(default='jax', metadata={"section": namelist_local[1]})
@@ -54,3 +53,7 @@ class Namelist(TimeConfig, LoaderMixin):
     _io_layout: Tuple[int, int] = field(init=False, repr=False)
     _total_baroclinic_steps: int = field(init=False, repr=True)
     _total_barotropic_steps: int = field(init=False, repr=True)
+
+    # diagnostics
+    diag_freq: Optional[int] = field(default=None, metadata={"section": namelist_local[5]})
+    timer: Optional[bool] = field(default=False, metadata={"section": namelist_local[5]})
