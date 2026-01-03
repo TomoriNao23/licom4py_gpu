@@ -30,4 +30,4 @@ npes_y = 1
 
 [diagnostics]
  diag_freq = 24
- timer = False
+ timer = True

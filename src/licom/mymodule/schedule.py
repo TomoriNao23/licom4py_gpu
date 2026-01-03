@@ -11,11 +11,14 @@ Updated: 2025-09-03
 from typing import Union
 
 # Local application imports
-from duogrid.duogrid import Duogrid as Dg
+from mymodule.timer import stop_timer
 from readnamelist import Namelist, Timer
 from momentum.momentum import Momentum
+from mymodule.timer import timed, print_all_time
+from duogrid.duogrid import Duogrid as Dg
 
 class Schedule:
+
     @classmethod
     def init(cls, namelist: Namelist, routines: list = None):
         """
@@ -34,18 +37,11 @@ class Schedule:
             if namelist.diag_freq is not None and namelist.diag_freq > 0 else None
 
     @classmethod
+    @timed(name="simulation", enabled=True)
     def run(cls, momentum: Momentum) -> None:
         """
         Total number of baroclinic steps (outer loop)
-        """ 
-
-        from mpi4py import MPI
-        from mymodule.timer import reset_timer, print_mpi_summary, enable_timing
-
-        comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()
-        enable_timing(Dg.mp.timer)
-        reset_timer()
+        """
 
         for bc_step in range(cls.total_baroclinic_steps):
 
@@ -72,5 +68,3 @@ class Schedule:
             # Advance current time after each baroclinic step
             cls.current_time.time_now()
 
-        if Dg.mp.timer:
-            print_mpi_summary(comm)

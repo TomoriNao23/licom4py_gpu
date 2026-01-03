@@ -5,7 +5,11 @@ Description: Main entry point for the LICOM Ocean Model. Initializes the model
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
-Updated: 2025-09-03
+Updated: 2026-01-04
+
+REVISION HISTORY:
+    03/09/2025 - Initial implementation of main program
+    04/01/2026 - Added timer
 """
 # Standard library imports
 import sys
@@ -17,7 +21,7 @@ from contextlib import redirect_stdout, redirect_stderr
 
 # Local application imports
 from initial.initial_all import Initial
-from mymodule import Schedule
+from mymodule import Schedule, print_all_time
 
 def main(debug_mode=False):
     """LICOM main program entry"""
@@ -30,6 +34,7 @@ def main(debug_mode=False):
         if not debug_mode:
             # Normal mode: run LICOM simulation
             Schedule.run(licom.momentum)
+            print_all_time()
             pass
         else:
             # Debug mode: run debug functionality with existing initialization

@@ -5,15 +5,18 @@ Description: Main initialization class for LICOM model, setting up namelist,
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
-Updated: 2025-09-16
+Updated: 2026-01-04
+
+REVISION HISTORY:
+    03/09/2025 - Initial implementation of Initial class
+    04/01/2026 - Added timer to initialization steps
 """
 # Standard library imports
 import sys
 import os
 
-
 # Local application imports
-from mymodule import Schedule
+from mymodule import Schedule, Timer, get_all_time
 from datatype import momentum_data
 from operators.agrid import agrid_vorticity, agrid_div, agrid_grad
 from readnamelist import Namelist
@@ -34,25 +37,28 @@ class Initial:
     
     def __init__(self):
 
-        # namelist init
-        self.namelist = Namelist.create()
+        with Timer(name = "initial", enabled=True):
+            # namelist init
+            self.namelist = Namelist.create()
 
-        # backend.FMS_chtholly init
-        FMS_chtholly.init(self.namelist)
+            # backend.FMS_chtholly init
+            FMS_chtholly.init(self.namelist)
 
-        # backend.calculation init
-        Field.init(FMS_chtholly.mp)
+            # backend.calculation init
+            Field.init(FMS_chtholly.mp)
 
-        # duogrid init
-        Dg.init(FMS_chtholly.mp)
+            # duogrid init
+            Dg.init(FMS_chtholly.mp)
 
-        # momentum init
-        self.momentum = Momentum()
-        
-        # schedule init
-        Schedule.init(self.namelist, ["barotropic"])
+            # momentum init
+            self.momentum = Momentum()
 
-        print("Initialization completed successfully") if (FMS_chtholly.mp.pe == 0) else None
+            # schedule init
+            Schedule.init(self.namelist, ["barotropic"])
+
+        time_init = get_all_time()
+        if FMS_chtholly.mp.pe == 0:
+            print(f"Initialization completed successfully in {time_init[0].to_dict()['mean']:.4f} seconds.")
 
     def __del__(self):
         """
