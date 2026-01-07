@@ -62,5 +62,3 @@ class Timer:
     def time_now(self) -> None:
         self.prev_dt += timedelta(seconds=self.delta_dt)
         return None
-
-

@@ -5,12 +5,13 @@ Description: High-performance barotropic time stepping methods for Momentum clas
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-22
-Updated: 2025-09-24
+Updated: 2026-01-07
 
 REVISION HISTORY:
     22/09/2025 - Python port with high-performance JAX implementation
-    23/09/2025 - split into barotr_jit.py and barotr.py
+    23/09/2025 - Split into barotr_jit.py and barotr.py
     25/09/2025 - Chtholly debug and add LMARS
+    07/01/2026 - Update with licom4.fortran changes
 """
 
 # Third-party imports
@@ -23,7 +24,7 @@ from typing import Tuple
 # Local application imports
 from mymodule.timer import timed
 from backend.cube_grid.use_mpp import FMS_chtholly
-from duogrid.duogrid import Duogrid as Dg
+from duogrid import Dg
 from operators.agrid import agrid_div
 from operators.remap import vector_trans_2d
 from ._barotr_jit import (
@@ -53,14 +54,12 @@ def add_barotropic_methods(cls):
     def barotr_rk2(self) -> None:
         """Barotropic Time Stepping Using 2nd-order Runge-Kutta"""
         beta_d = 0.0
-        
 
         for nc in range(1, self.nbb + 1):
-            is_nc = (nc == self.nbb)
             
             # RK2 steps
-            self._step_rk(self.dtb/2.0, beta_d, False, is_nc)
-            self._step_rk(self.dtb, beta_d, True, is_nc)
+            self._step_rk(self.dtb/2.0, beta_d, False)
+            self._step_rk(self.dtb, beta_d, True)
             
             # Post-process
             self._postprocess()
@@ -74,17 +73,16 @@ def add_barotropic_methods(cls):
         beta_d = 1.0
         
         for nc in range(1, self.nbb + 1):
-            is_nc = (nc == self.nbb)
             
             # RK3 steps
-            self._step_rk(self.dtb/3.0, beta_d, False, is_nc)
-            self._step_rk(self.dtb/2.0, beta_d, False, is_nc)
-            self._step_rk(self.dtb, beta_d, True, is_nc)
+            self._step_rk(self.dtb/3.0, beta_d, False)
+            self._step_rk(self.dtb/2.0, beta_d, False)
+            self._step_rk(self.dtb, beta_d, True)
             
             # Post-process
             self._postprocess()
     
-    def _step_rk(self, dt: float, beta_d: float, is_laststep: bool, isnc: bool) -> None:
+    def _step_rk(self, dt: float, beta_d: float, is_laststep: bool) -> None:
         """Kernel of Barotropic Time Stepping in RK"""
         # Store h0 for FB scheme
         _h0_tem = self.h0
@@ -112,10 +110,6 @@ def add_barotropic_methods(cls):
         
         # Extend vector boundary
         self.ub, self.vb = FMS_chtholly.ext_vector(self.ub, self.vb)
-        
-        # Update advection (last step only)
-        if is_laststep and isnc:
-            self.advx, self.advy = self._calculate_advection()
 
     @timed(enabled=lambda: getattr(getattr(Dg, 'mp', None), 'timer', False), name="predict_ssh")
     def _predict_ssh(self, dt: float, is_laststep: bool) -> None:

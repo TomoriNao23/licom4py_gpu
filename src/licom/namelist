@@ -4,7 +4,6 @@ baroclinic_dt = 3600
 tracer_interval = 1
 rk_barotr = 2
 case = w92case2
-diag_freq = 24
 
 [backend]
 platform = cpu
@@ -22,7 +21,7 @@ integration_days = 3
 [grid]
 nx = 96
 ny = 96
-npz = 1
+npz = 30
 
 [mpi]
 npes_x = 1

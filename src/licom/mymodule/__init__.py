@@ -5,10 +5,10 @@ Description: Package initialization for custom LICOM modules including
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
-Updated: 2026-01-04
+Updated: 2026-01-07
 """
 
-from .exceptions import NamelistError, InitialError
+from .exceptions import NamelistError, InitialError, PyFMSError
 from .schedule import Schedule
 from .debug import Debug
 from .timer import timed, print_all_time, Timer, stop_timer, get_all_time

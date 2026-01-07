@@ -54,7 +54,7 @@ def add_diag_methods(cls):
         """
         Print global diagnostic information
         """
-        from duogrid.duogrid import Duogrid as Dg
+        from duogrid import Dg
 
         global_h0max, global_h0min, global_h0mean, \
             global_ubmax, global_ubmin, global_ubmean, \

@@ -22,7 +22,7 @@ from operators.agrid import agrid_vorticity, agrid_div, agrid_grad
 from readnamelist import Namelist
 from backend import FMS_chtholly
 from backend.calculation.field import Field
-from duogrid.duogrid import Duogrid as Dg
+from duogrid import Dg
 from operators.poly import vector_interpolation_ew, scalar_interpolation_x, scalar_interpolation_y
 from operators.remap import to_c_grid, to_d_grid, to_d_grid_upwind, to_a_grid, vector_trans_2d
 from momentum.momentum import Momentum

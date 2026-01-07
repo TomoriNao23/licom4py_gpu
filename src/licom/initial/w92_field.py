@@ -20,8 +20,7 @@ from typing import Tuple
 # Local application imports
 from backend.calculation.field import Field
 from backend.cube_grid.use_mpp import FMS_chtholly
-from duogrid.duogrid import Duogrid as Dg
-
+from duogrid import Dg
 
 
 @functools.partial(jax.jit, static_argnums=())

@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import functools
 
 # Local application imports
-from duogrid.duogrid import Duogrid as Dg
+from duogrid import Dg
 from operators.poly import scalar_interpolation_x, scalar_interpolation_y
 
 

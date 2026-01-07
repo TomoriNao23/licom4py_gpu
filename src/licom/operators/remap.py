@@ -17,7 +17,7 @@ from typing import Tuple
 
 # Local application imports
 from operators.poly import vector_interpolation_ew, vector_interpolation_ns
-from duogrid.duogrid import Duogrid as Dg
+from duogrid import Dg
 from backend.cube_grid.use_mpp import FMS_chtholly
 
 @functools.partial(jax.jit, static_argnums=())
