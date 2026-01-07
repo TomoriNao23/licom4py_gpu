@@ -311,7 +311,10 @@ class Timer:
             enabled: Whether timing is enabled
         """
         self.name = name
-        self.enabled = enabled
+        if callable(enabled):
+            self.enabled = enabled()
+        else:
+            self.enabled = enabled
     
     def __enter__(self):
         if self.enabled:

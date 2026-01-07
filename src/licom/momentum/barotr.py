@@ -50,7 +50,7 @@ def add_barotropic_methods(cls):
     """
     
     # Core timestepping methods
-    @timed(enabled=lambda: getattr(getattr(Dg, 'mp', None), 'timer', False), name="barotropic")
+    #@timed(enabled=lambda: getattr(getattr(Dg, 'mp', None), 'timer', False), name="barotropic")
     def barotr_rk2(self) -> None:
         """Barotropic Time Stepping Using 2nd-order Runge-Kutta"""
         beta_d = 0.0
@@ -67,7 +67,7 @@ def add_barotropic_methods(cls):
             #     print("h0*",nc,jnp.max(self.h0[3:-3,3:-3]), jnp.min(self.h0[3:-3,3:-3]), jnp.sum(self.h0[3:-3,3:-3]))        
 
     
-    @timed(enabled=lambda: getattr(getattr(Dg, 'mp', None), 'timer', False), name="barotropic")
+    #@timed(enabled=lambda: getattr(getattr(Dg, 'mp', None), 'timer', False), name="barotropic")
     def barotr_rk3(self) -> None:
         """Barotropic Time Stepping Using 3rd-order Runge-Kutta"""
         beta_d = 1.0
@@ -111,7 +111,7 @@ def add_barotropic_methods(cls):
         # Extend vector boundary
         self.ub, self.vb = FMS_chtholly.ext_vector(self.ub, self.vb)
 
-    @timed(enabled=lambda: getattr(getattr(Dg, 'mp', None), 'timer', False), name="predict_ssh")
+    #@timed(enabled=lambda: getattr(getattr(Dg, 'mp', None), 'timer', False), name="predict_ssh")
     def _predict_ssh(self, dt: float, is_laststep: bool) -> None:
         """SSH prediction"""
         # Calculate flux
@@ -127,7 +127,7 @@ def add_barotropic_methods(cls):
         # Update SSH
         self.h0 = _update_ssh_jit(self.h0p, div_out, dt)
 
-    @timed(enabled=lambda: getattr(getattr(Dg, 'mp', None), 'timer', False), name="predict_velocity")
+    #@timed(enabled=lambda: getattr(getattr(Dg, 'mp', None), 'timer', False), name="predict_velocity")
     def _predict_uv(self, dt: float, h_old: jax.Array) -> None:
         """Velocity prediction"""
         # Calculate pressure gradient force
