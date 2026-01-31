@@ -8,6 +8,7 @@ Created: 2025-09-03
 Updated: 2025-09-04 (Chtholly: add classmethod allocate and deallocate)
 Updated: 2025-09-16 (Chtholly: optimization and backend separation)
        : 2025-09-21 (Chtholly: add comment for classmethod allocate and deallocate)
+       : 2026-01-31 (Chtholly: gather data for device_put_sharded)
     
 """
 
@@ -55,8 +56,8 @@ class Field:
         cls._shape = {
             # A-grid
             '2d': (mp.ied - mp.isd + 1, mp.jed - mp.jsd + 1),                       # (isd:ied, jsd:jed)
-            '3d': ( mp.npz, mp.ied - mp.isd + 1, mp.jed - mp.jsd + 1,),               # (isd:ied, jsd:jed, 2)
-            '3d1': (mp.npz + 1,mp.ied - mp.isd + 1, mp.jed - mp.jsd + 1),          # (isd:ied, jsd:jed, 2)
+            '3d': ( mp.npz, mp.ied - mp.isd + 1, mp.jed - mp.jsd + 1,),             # (npz, isd:ied, jsd:jed)
+            '3d1': (mp.npz + 1,mp.ied - mp.isd + 1, mp.jed - mp.jsd + 1),           # (npz+1, isd:ied, jsd:jed)
 
             # B/C/D-grid
             '2d_bgrid': (mp.ied - mp.isd + 1 + 1, mp.jed - mp.jsd + 1 + 1),         # (isd:ied+1, jsd:jed+1)
@@ -140,3 +141,51 @@ class Field:
         return [delattr(owner, name) \
             for _, names in field_groups.items() \
                 if names for name in names if hasattr(owner, name)]
+    
+    #
+    @staticmethod
+    def gather_tiles_with_id(data, tile):
+
+        from mpi4py import MPI
+        import numpy as np
+
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+
+        # 1. 收 tile id
+        tile_ids = None
+        if rank == 0:
+            tile_ids = np.empty(size, dtype=np.int32)
+
+        comm.Gather(
+            sendbuf=np.array(tile, dtype=np.int32),
+            recvbuf=tile_ids,
+            root=0
+        )
+
+        # 2. 收数据
+        recvbuf = None
+        if rank == 0:
+            recvbuf = np.empty((size, *data.shape), dtype=data.dtype)
+
+        comm.Gather(
+            sendbuf=data,
+            recvbuf=recvbuf,
+            root=0
+        )
+        # 3. rank 0 按 tile 重排
+        if rank == 0:
+            tiles = {}
+            for r in range(size):
+                tiles[tile_ids[r]] = recvbuf[r]
+
+            # 保证 tile 顺序
+            tiles_all = np.stack(
+                [tiles[t] for t in sorted(tiles.keys())],
+                axis=0
+            )
+            #print(tiles_all.shape)
+            return tiles_all
+
+        return None

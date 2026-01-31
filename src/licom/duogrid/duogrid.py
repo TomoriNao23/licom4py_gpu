@@ -135,3 +135,6 @@ class Duogrid:
         cls.d_cosa = Field.array(bcd["d_cosa"]) 
         cls.d_dx = Field.array(bcd["d_dx"])
         cls.d_dy = Field.array(bcd["d_dy"])
+
+        # test
+        #Field.gather_tiles_with_id(a["a_x"], cls.mp.tile)
