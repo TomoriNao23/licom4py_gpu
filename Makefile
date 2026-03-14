@@ -6,7 +6,7 @@ PYTHONPYCACHEPREFIX := $(PWD)/$(CACHE_DIR)
 export JAX_ENABLE_X64=1
 
 # Targets
-.PHONY: all run clean debug help status install version
+.PHONY: all run field clean debug help status install version
 
 all: run
 
@@ -20,6 +20,17 @@ run:
 		touch input.nml;\
 		export PYTHONPYCACHEPREFIX=$(PYTHONPYCACHEPREFIX); \
         export XLA_PYTHON_CLIENT_ALLOCATOR=platform \
+		NX=$$(python -c "import configparser; \
+		c=configparser.ConfigParser(); \
+		c.read(\"src/licom/namelist\"); \
+		print(int(c[\"grid\"][\"nx\"]))");\
+		FIELD=field/duogrid_C$${NX}.npz; \
+		if [ ! -f "$$FIELD" ]; then \
+			echo "[run] Field file $$FIELD not found, generating..."; \
+			$(MAKE) field || { echo "[run] ERROR: make field failed"; exit 1; }; \
+		else \
+			echo "[run] Field file $$FIELD found"; \
+		fi; \
 		PROCS=$$(python -c "import configparser; \
 		c=configparser.ConfigParser(); \
 		c.read(\"src/licom/namelist\"); \
@@ -36,6 +47,33 @@ run:
 		echo "=========================================="; \
 	' | tee logs/shell.output
 
+# Generate initial field (duogrid_C{nx}.npz) using MPI
+# Resolution read from src/licom/namelist [grid] nx
+field:
+	@mkdir -p $(CACHE_DIR) logs field
+	@bash -c '\
+		echo "=========================================="; \
+		echo "Generating initial field..."; \
+		echo "=========================================="; \
+		NX=$$(python -c "import configparser; \
+		c=configparser.ConfigParser(); \
+		c.read(\"src/licom/namelist\"); \
+		print(int(c[\"grid\"][\"nx\"]))"); \
+		echo "Resolution: C$${NX}"; \
+		cd field && \
+		export PYTHONPYCACHEPREFIX=$(PYTHONPYCACHEPREFIX); \
+		export XLA_PYTHON_CLIENT_ALLOCATOR=platform; \
+		export JAX_ENABLE_X64=1; \
+		PYTHONPATH=../src/initial_field \
+		mpirun -n 6 python ../src/initial_field/main.py --nx $${NX} \
+		2>../logs/field_error.log | cat; \
+		find .. -maxdepth 2 -path ../logs -prune -o \
+			-type f \( -name "*.log" -o -name "*.out" \) \
+			-exec mv -f {} ../logs/ \; 2>/dev/null || true; \
+		echo "=========================================="; \
+		echo "Field generation finished"; \
+		echo "=========================================="; \
+	'
 # Debug mode
 debug:
 	@mkdir -p $(CACHE_DIR) logs
@@ -140,6 +178,7 @@ clean:
 	@find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 	@find . -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
 	@rm -rf logs/*
+	@rm -f input.nml
 	@echo "Cleanup complete"
 	@echo "=========================================="
 
@@ -150,6 +189,7 @@ help:
 	@echo "=========================================="
 	@echo "Targets:"
 	@echo "  run      - Run LICOM main program (default)"
+	@echo "  field    - Generate initial field (duogrid.npz) into field/"
 	@echo "  debug    - Run LICOM debug mode (MPI parallel)"
 	@echo "  status   - Display system status"
 	@echo "  install  - Install dependencies"

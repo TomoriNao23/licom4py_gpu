@@ -220,6 +220,15 @@ namelist
 input.nml
 
 # ===========================================
+# field/ directory: generated files ignored, input.nml tracked
+# ===========================================
+field/*.npz
+field/*.log
+field/*.out
+# Force-track field/input.nml (required by FMS at runtime)
+!field/input.nml
+
+# ===========================================
 # System files
 # ===========================================
 
