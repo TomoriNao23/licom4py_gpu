@@ -16,7 +16,6 @@ Updated: 2025-09-16 (Chtholly: optimization and backend separation)
 from dataclasses import dataclass
 from typing import Any, Dict
 
-
 # Local application imports
 from datatype import MpDate
 from . import jax as jax_backend

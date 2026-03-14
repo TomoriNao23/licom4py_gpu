@@ -23,9 +23,10 @@ nx = 96
 ny = 96
 npz = 30
 
-[mpi]
-npes_x = 1
-npes_y = 1
+[gpu_mesh]
+pdev = 1
+px = 1
+py = 1
 
 [diagnostics]
  diag_freq = 24

@@ -71,7 +71,6 @@ def namelist_post_init(cls):
                            int(self._total_integration_seconds / self.baroclinic_dt))
         object.__setattr__(self, "_total_barotropic_steps",
                            int(self._total_integration_seconds / self.barotropic_dt))
-        object.__setattr__(self, "_io_layout", (self.io_x, self.io_y))
         
         # 4. If there's an original __post_init__, execute it too
         if original_post_init is not None and original_post_init != enhanced_post_init:

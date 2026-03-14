@@ -106,7 +106,8 @@ def validate_namelist_class(cls):
         self._require(self.npz > 0, "npz must be positive")
 
         # mpi validations
-        self._require(self.npes_x > 0 and self.npes_y > 0, "npes_x, npes_y must be positive")
+        self._require(self.px > 0 and self.py > 0, "px, py must be positive")
+        self._require(self.pdev > 0, "pdev must be positive")
     
     # Attach method to the class
     cls.check_namelist = check_namelist

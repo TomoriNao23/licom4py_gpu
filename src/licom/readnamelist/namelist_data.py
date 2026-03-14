@@ -23,7 +23,7 @@ from .validators import validate_namelist_class
 class Namelist(TimeConfig, LoaderMixin):
     """Main namelist configuration class inheriting time configuration."""
 
-    namelist_local = ["run_params", "backend", "time_params", "grid", "mpi", "diagnostics"]
+    namelist_local = ["run_params", "backend", "time_params", "grid", "gpu_mesh", "diagnostics"]
 
     # run_params section
     barotropic_dt: int = field(default=150, metadata={"section": namelist_local[0]})
@@ -43,11 +43,10 @@ class Namelist(TimeConfig, LoaderMixin):
     npz: int = field(default=1, metadata={"section": namelist_local[3]})
     halo: int = field(default=1, metadata={"section": namelist_local[3]})
 
-    # mpi section
-    npes_x: int = field(default=1, metadata={"section": namelist_local[4]})
-    npes_y: int = field(default=1, metadata={"section": namelist_local[4]})
-    io_x : int = field(default=1, metadata={"section": namelist_local[4]})
-    io_y : int = field(default=1, metadata={"section": namelist_local[4]})
+    # mesh section
+    pdev: int = field(default=1, metadata={"section": namelist_local[4]})
+    px: int = field(default=1, metadata={"section": namelist_local[4]})
+    py: int = field(default=1, metadata={"section": namelist_local[4]})
 
     # computed once after init
     _io_layout: Tuple[int, int] = field(init=False, repr=False)

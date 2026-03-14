@@ -52,7 +52,7 @@ class FMS_chtholly:
     def configure(cls, namelist: Namelist) -> None:
 
        cls._load_chtholly_library()
-       cls._lib.chtholly_init(namelist.nx, namelist.ny, namelist.npes_x, namelist.npes_y)
+       cls._lib.chtholly_init(namelist.nx, namelist.ny, namelist.px, namelist.py)
        cls._mp_init(namelist)
 
     @classmethod

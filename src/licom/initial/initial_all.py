@@ -7,13 +7,10 @@ Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
 Updated: 2026-01-04
 
-REVISION HISTORY:
+REVISION HISTORY:·
     03/09/2025 - Initial implementation of Initial class
     04/01/2026 - Added timer to initialization steps
 """
-# Standard library imports
-import sys
-import os
 
 # Local application imports
 from mymodule import Schedule, Timer, get_all_time
@@ -27,7 +24,9 @@ from operators.poly import vector_interpolation_ew, scalar_interpolation_x, scal
 from operators.remap import to_c_grid, to_d_grid, to_d_grid_upwind, to_a_grid, vector_trans_2d
 from momentum.momentum import Momentum
 from initial.w92_field import initialize_test_velocity_field
+from mesh.gpu_mesh import GPUMesh
 
+# Third-party imports
 import jax.numpy as jnp
 import numpy as np
 
@@ -49,6 +48,9 @@ class Initial:
 
             # duogrid init
             Dg.configure(FMS_chtholly.mp)
+
+            # mesh init
+            GPUMesh.configure(self.namelist)
 
             # momentum init
             self.momentum = Momentum()

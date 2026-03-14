@@ -23,7 +23,7 @@ run:
 		PROCS=$$(python -c "import configparser; \
 		c=configparser.ConfigParser(); \
 		c.read(\"src/licom/namelist\"); \
-		print(int(c[\"mpi\"][\"npes_x\"])*int(c[\"mpi\"][\"npes_y\"])*6)"); \
+		print(int(c[\"gpu_mesh\"][\"px\"])*int(c[\"gpu_mesh\"][\"py\"])*6)"); \
 		PYTHONPATH=src mpirun -n $$PROCS \
 		python src/licom/main.py 2>logs/error.log | cat; \
 		find . -path ./logs -prune -o -type f \
