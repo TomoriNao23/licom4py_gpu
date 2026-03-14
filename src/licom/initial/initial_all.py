@@ -24,7 +24,7 @@ from operators.poly import vector_interpolation_ew, scalar_interpolation_x, scal
 from operators.remap import to_c_grid, to_d_grid, to_d_grid_upwind, to_a_grid, vector_trans_2d
 from momentum.momentum import Momentum
 from initial.w92_field import initialize_test_velocity_field
-from mesh.gpu_mesh import GPUMesh
+from mesh.gpu_mesh import GPU_Mesh
 
 # Third-party imports
 import jax.numpy as jnp
@@ -50,7 +50,7 @@ class Initial:
             Dg.configure(FMS_chtholly.mp)
 
             # mesh init
-            GPUMesh.configure(self.namelist)
+            GPU_Mesh.configure(self.namelist)
 
             # momentum init
             self.momentum = Momentum()

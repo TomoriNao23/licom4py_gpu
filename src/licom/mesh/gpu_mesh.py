@@ -20,7 +20,7 @@ from .g2l import Global2Local
 from .communication import Communication
 
 
-class GPUMesh:
+class GPU_Mesh:
     
     @classmethod
     def configure(cls, namelist):

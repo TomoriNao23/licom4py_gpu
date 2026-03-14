@@ -10,4 +10,4 @@ REVISION HISTORY:
     14/03/2026 - Formatting and header updates
 """
 # Local application imports
-from .gpu_mesh import GPUMesh
+from .gpu_mesh import GPU_Mesh
