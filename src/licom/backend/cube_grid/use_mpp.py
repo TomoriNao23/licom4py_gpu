@@ -49,7 +49,7 @@ class FMS_chtholly:
     communication2d: Callable
 
     @classmethod
-    def init(cls, namelist: Namelist) -> None:
+    def configure(cls, namelist: Namelist) -> None:
 
        cls._load_chtholly_library()
        cls._lib.chtholly_init(namelist.nx, namelist.ny, namelist.npes_x, namelist.npes_y)

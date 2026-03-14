@@ -42,19 +42,19 @@ class Initial:
             self.namelist = Namelist.create()
 
             # backend.FMS_chtholly init
-            FMS_chtholly.init(self.namelist)
+            FMS_chtholly.configure(self.namelist)
 
             # backend.calculation init
-            Field.init(FMS_chtholly.mp)
+            Field.configure(FMS_chtholly.mp)
 
             # duogrid init
-            Dg.init(FMS_chtholly.mp)
+            Dg.configure(FMS_chtholly.mp)
 
             # momentum init
             self.momentum = Momentum()
 
             # schedule init
-            Schedule.init(self.namelist, ["barotropic"])
+            Schedule.configure(self.namelist, ["barotropic"])
 
         time_init = get_all_time()
         if FMS_chtholly.mp.pe == 0:

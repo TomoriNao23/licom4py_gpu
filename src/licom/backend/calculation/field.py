@@ -48,7 +48,7 @@ class Field:
     _shape: dict
 
     @classmethod
-    def init(cls, mp: MpDate) -> None:
+    def configure(cls, mp: MpDate) -> None:
         """
         Initialize the Field class with the given MP configuration.
         """

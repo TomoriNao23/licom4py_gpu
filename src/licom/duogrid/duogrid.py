@@ -37,7 +37,7 @@ class Duogrid:
     outer : Field.datatype
     
     @classmethod
-    def init(cls, mp: MpDate) -> 'Duogrid':
+    def configure(cls, mp: MpDate) -> 'Duogrid':
         """
         Initialize Duogrid with MP domain configuration.
         

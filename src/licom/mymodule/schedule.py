@@ -25,7 +25,7 @@ from duogrid import Dg
 class Schedule:
 
     @classmethod
-    def init(cls, namelist: Namelist, routines: list = None):
+    def configure(cls, namelist: Namelist, routines: list = None):
         """
         Parameters:
             tracer_interval: Frequency of tracer execution (units: baroclinic steps)
