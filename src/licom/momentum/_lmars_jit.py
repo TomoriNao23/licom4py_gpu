@@ -40,8 +40,8 @@ def get_celerity_jit(
     """
 
     # Initialize
-    celerity_x = Field.new('2d')
-    celerity_y = Field.new('2d')
+    celerity_x = jnp.zeros_like(h)
+    celerity_y = jnp.zeros_like(h)
 
     # get the interpolated ocean depth
     hx, hy = scalar_interpolation_xy(h)
@@ -88,8 +88,8 @@ def get_vel_vis_2d_jit(
     """
 
     # Initialize
-    vel_vis_x = Field.new('2d')
-    vel_vis_y = Field.new('2d')
+    vel_vis_x = jnp.zeros_like(u)
+    vel_vis_y = jnp.zeros_like(v)
 
     # get the interpolated ocean depth
     he, hw , hn, hs = vector_interpolation(h)
@@ -126,8 +126,8 @@ def get_pgf_vis_2d_jit(
     """
 
     # Initialize
-    vel_vis_x = Field.new('2d')
-    vel_vis_y = Field.new('2d')
+    vel_vis_x = jnp.zeros_like(u)
+    vel_vis_y = jnp.zeros_like(v)
 
     # get the interpolated ocean current
     ue, uw = vector_interpolation_ew(u)
