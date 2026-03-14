@@ -3,6 +3,7 @@ from duogrid import Dg
 from .barotr import add_barotropic_methods
 from initial.w92_field import initialize_test_velocity_field
 from mymodule.diag import add_diag_methods
+import jax.numpy as jnp
 
 @add_barotropic_methods
 @add_diag_methods
@@ -14,7 +15,7 @@ class Momentum(MomentumData):
 
         # Initialize some commonly used scalars/parameters
         ## Barotropic step counter
-        self.isb = 0         
+        self.isb = jnp.int32(0)
         ## Number of barotropic blocks(time.baroclinic/time.barotropic)     
         self.nbb = Dg.mp.nbb
         ## Barotropic time step
