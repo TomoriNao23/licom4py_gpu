@@ -1,7 +1,17 @@
 """
 File: barotropic.py
 Description: High-performance barotropic time stepping methods for Momentum class.
-             Using single-graph JIT compilation for the ENTIRE RK2/RK3 loops.
+
+Author: Chtholly <mengleshan@mail.iap.ac.cn>
+Created: 2025-09-22
+Updated: 2026-03-14
+
+REVISION HISTORY:
+    22/09/2025 - Python port with high-performance JAX implementation
+    23/09/2025 - Split into barotr_jit.py and barotr.py
+    25/09/2025 - Debug and add LMARS
+    07/01/2026 - Update with licom4.fortran changes
+    14/03/2026 - Single-graph JIT compilation for the ENTIRE RK2/RK3 loops
 """
 
 import jax
