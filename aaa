@@ -52,6 +52,7 @@ class FMS_chtholly:
     def configure(cls, namelist: Namelist) -> None:
 
        cls._load_chtholly_library()
+       print(namelist.nx, namelist.ny, namelist.px, namelist.py)
        cls._lib.chtholly_init(namelist.nx, namelist.ny, namelist.px, namelist.py)
        cls._mp_init(namelist)
 
@@ -268,11 +269,18 @@ class FMS_chtholly:
         
         # Extract parameters for JIT-compatible function
         mp = cls.mp
-        isd, jsd, ied, jed = mp.isd, mp.jsd, mp.ied, mp.jed
-        is_, js, ie, je = mp.is_, mp.js, mp.ie, mp.je
+        isd, jsd, ied, jed = -2, -2, 99, 99
+        is_, js, ie, je = 1, 1, 96, 96
         
-        # Extract remapping flags
-        rmp_s, rmp_n, rmp_w, rmp_e = cls.rmp_s, cls.rmp_n, cls.rmp_w, cls.rmp_e
+        rmp_w = True if is_ == 1 else False
+        rmp_e = True if ie == cls.mp.nx else False
+        rmp_s = True if js == 1 else False
+        rmp_n = True if je == cls.mp.ny else False
+
+        rmp_sw = rmp_s and rmp_w
+        rmp_se = rmp_s and rmp_e
+        rmp_nw = rmp_n and rmp_w
+        rmp_ne = rmp_n and rmp_e
         
         # Extract k2e parameters
         coef = Duogrid.k2e_coef  # (ni, nj, nord)

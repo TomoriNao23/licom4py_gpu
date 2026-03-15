@@ -55,8 +55,9 @@ class Schedule:
         # Diagnostics
         if cls.diag_interval is not None:
             diag_interval = cls.diag_interval
+            import jax
             def diag_step(m):
-                if Dg.mp.pe == 0:
+                if jax.process_index() == 0:
                     print(f"Time: {cls.current_time.prev_dt.strftime('%Y-%m-%d-%H')}")
                 m.print_global_diag()
             diag_fn = diag_step

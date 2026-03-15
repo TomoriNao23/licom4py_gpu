@@ -52,15 +52,15 @@ class MomentumData(DataABC):
             'celerity_x', 'celerity_y',        
         ],
         
-        # 3D fields on A-grid (npz, isd:ied, jsd:jed)  
+        # 3D fields on A-grid (tile, npz, nx_h, ny_h)  
         '3d': [
             'ua', 'va',           # 3D velocity components
             'uap', 'vap',         # Previous time step 3D velocities
         ],
         
-        # Additional 3D fields if needed for baroclinic computations
+        # 3D fields with npz+1 (at layer interfaces)
         '3d1': [
-            'w',                  # Vertical velocity (at layer interfaces)
+            'w',                  # Vertical velocity
         ]
     }
 

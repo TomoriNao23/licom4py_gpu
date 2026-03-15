@@ -28,7 +28,6 @@ M13vm = 37.0/60.0
 M23vm = -2.0/15.0
 M33vm = 1.0/60.0
 
-@functools.partial(jax.jit, static_argnums=())
 def vector_interpolation_ew(eta: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """
     Vector Polynomial Interpolation for East-West direction (3rd order only)
@@ -52,20 +51,20 @@ def vector_interpolation_ew(eta: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]
         tuple: (eta_star_east, eta_star_west) - both of shape [xsize, ysize]
     """
     
-    eta_star_e = jnp.zeros_like(eta).at[2:-2, :].set(
-        Em23vm * eta[0:-4, :] + 
-        Em13vm * eta[1:-3, :] + 
-        Ep03vm * eta[2:-2, :] + 
-        Ep13vm * eta[3:-1, :] + 
-        Ep23vm * eta[4:, :]
+    eta_star_e = jnp.zeros_like(eta).at[..., 2:-2, :].set(
+        Em23vm * eta[..., 0:-4, :] + 
+        Em13vm * eta[..., 1:-3, :] + 
+        Ep03vm * eta[..., 2:-2, :] + 
+        Ep13vm * eta[..., 3:-1, :] + 
+        Ep23vm * eta[..., 4:, :]
     )
     
-    eta_star_w = jnp.zeros_like(eta).at[2:-2, :].set(
-        Ep23vm * eta[0:-4, :] + 
-        Ep13vm * eta[1:-3, :] + 
-        Ep03vm * eta[2:-2, :] + 
-        Em13vm * eta[3:-1, :] + 
-        Em23vm * eta[4:, :]
+    eta_star_w = jnp.zeros_like(eta).at[..., 2:-2, :].set(
+        Ep23vm * eta[..., 0:-4, :] + 
+        Ep13vm * eta[..., 1:-3, :] + 
+        Ep03vm * eta[..., 2:-2, :] + 
+        Em13vm * eta[..., 3:-1, :] + 
+        Em23vm * eta[..., 4:, :]
     )
     
     return eta_star_e, eta_star_w
@@ -94,20 +93,20 @@ def vector_interpolation_ns(eta: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]
     Returns:
         tuple: (eta_star_north, eta_star_south) - both of shape [xsize, ysize]
     """
-    eta_star_n = jnp.zeros_like(eta).at[:, 2:-2].set(
-        Em23vm * eta[:, 0:-4] + 
-        Em13vm * eta[:, 1:-3] + 
-        Ep03vm * eta[:, 2:-2] + 
-        Ep13vm * eta[:, 3:-1] + 
-        Ep23vm * eta[:, 4:]
+    eta_star_n = jnp.zeros_like(eta).at[..., :, 2:-2].set(
+        Em23vm * eta[..., :, 0:-4] + 
+        Em13vm * eta[..., :, 1:-3] + 
+        Ep03vm * eta[..., :, 2:-2] + 
+        Ep13vm * eta[..., :, 3:-1] + 
+        Ep23vm * eta[..., :, 4:]
     )
     
-    eta_star_s = jnp.zeros_like(eta).at[:, 2:-2].set(
-        Ep23vm * eta[:, 0:-4] + 
-        Ep13vm * eta[:, 1:-3] + 
-        Ep03vm * eta[:, 2:-2] + 
-        Em13vm * eta[:, 3:-1] + 
-        Em23vm * eta[:, 4:]
+    eta_star_s = jnp.zeros_like(eta).at[..., :, 2:-2].set(
+        Ep23vm * eta[..., :, 0:-4] + 
+        Ep13vm * eta[..., :, 1:-3] + 
+        Ep03vm * eta[..., :, 2:-2] + 
+        Em13vm * eta[..., :, 3:-1] + 
+        Em23vm * eta[..., :, 4:]
     )
     
     return eta_star_n, eta_star_s
@@ -148,11 +147,11 @@ def scalar_interpolation_x(scal: jnp.ndarray) -> jnp.ndarray:
         scal_out: interpolated scalar field [xsize, ysize]
     """
     
-    scal_out = jnp.zeros_like(scal).at[3:-2, 3:-2].set(
+    scal_out = jnp.zeros_like(scal).at[..., 3:-2, 3:-2].set(
         (
-            M13vm * (scal[2:-3, 3:-2] + scal[3:-2, 3:-2]) + 
-            M23vm * (scal[1:-4, 3:-2] + scal[4:-1, 3:-2]) + 
-            M33vm * (scal[:-5, 3:-2] + scal[5:, 3:-2])
+            M13vm * (scal[..., 2:-3, 3:-2] + scal[..., 3:-2, 3:-2]) + 
+            M23vm * (scal[..., 1:-4, 3:-2] + scal[..., 4:-1, 3:-2]) + 
+            M33vm * (scal[..., :-5, 3:-2] + scal[..., 5:, 3:-2])
         )
     )
     
@@ -176,11 +175,11 @@ def scalar_interpolation_y(scal: jnp.ndarray) -> jnp.ndarray:
     Returns:
         scal_out: interpolated scalar field [xsize, ysize]
     """
-    scal_out = jnp.zeros_like(scal).at[3:-2, 3:-2].set(
+    scal_out = jnp.zeros_like(scal).at[..., 3:-2, 3:-2].set(
         (
-            M13vm * (scal[3:-2, 2:-3] + scal[3:-2, 3:-2]) + 
-            M23vm * (scal[3:-2, 1:-4] + scal[3:-2, 4:-1]) + 
-            M33vm * (scal[3:-2, :-5] + scal[3:-2, 5:])
+            M13vm * (scal[..., 3:-2, 2:-3] + scal[..., 3:-2, 3:-2]) + 
+            M23vm * (scal[..., 3:-2, 1:-4] + scal[..., 3:-2, 4:-1]) + 
+            M33vm * (scal[..., 3:-2, :-5] + scal[..., 3:-2, 5:])
         )
     )
     

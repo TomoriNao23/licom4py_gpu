@@ -1,146 +1,138 @@
 """
-File: duogrid_data.py
+File: duogrid.py
 Description: Duogrid data structure for grid management in LICOM ocean model.
-    Ported from Fortran duogrid_data.F90 and duogrid_alloc.F90.
+    Loads pre-computed grid data from NPZ file and distributes via Global2Local.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-04
-Updated: 2025-09-19 (Chtholly add inner and outer masks)
+Updated: 2026-03-15 (Refactored: remove Field abstraction, use Global2Local)
 """
+
+# Standard library imports
+import os
 
 # Third-party imports
 import numpy as np
+import jax.numpy as jnp
 
 # Local application imports
-from backend.calculation.field import Field
-from datatype import MpDate
-from ._c_duogrid_function import duogrid_c_method
-from .duogrid_cal import duogrid_cal
+from mesh.g2l import Global2Local
 
-# Standard library imports
-from typing import Any
 
-@duogrid_c_method
-@duogrid_cal
 class Duogrid:
     """
     Duogrid data structure for grid management in LICOM ocean model.
-    Use Fortran.Runtime.class gg to get all grid fields from cFMS global_grid.
-    Use Python.backend Field to assign all grid fields to DuogridData.
     """
-    
-    # Class variables to store grid data
-    # mp class
-    mp : MpDate
-    # calculation fields
-    inner : Field.datatype
-    outer : Field.datatype
-    
+
+    # Grid parameters
+    ntile: int = 6
+    halo: int = 3
+    nx: int = 0
+    ny: int = 0
+    nx_local: int = 0
+    ny_local: int = 0
+
     @classmethod
-    def configure(cls, mp: MpDate) -> 'Duogrid':
+    def configure(cls, namelist, gpu_mesh) -> 'Duogrid':
         """
-        Initialize Duogrid with MP domain configuration.
-        
-        Args:
-            mp: MP domain configuration containing all necessary parameters
-            
-        Returns:
-            Duogrid instance with initialized grid data
+        Initialize Duogrid by loading from NPZ and distributing via Global2Local.
         """
-        cls.mp = mp
-        cls._map = {"nx": mp.nx, "ng": mp.ng, 
-            "isd": mp.isd, "ied": mp.ied, 
-            "jsd": mp.jsd, "jed": mp.jed, 
-            "tile": mp.tile, "grid_type": 0}
-        cls._init_from_cfms_global_grid()
-        
-        # Initialize calculation fields using decorator
-        cls.init_calculations()
-        
+        cls.ntile = gpu_mesh.ntile
+        cls.halo = gpu_mesh.halo
+        cls.nx = namelist.nx
+        cls.ny = namelist.ny
+        cls.nx_local = gpu_mesh.nx_local
+        cls.ny_local = gpu_mesh.ny_local
+
+        # Resolve NPZ file path
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))))
+        npz_path = os.path.join(project_root, 'field', f'duogrid_C{namelist.nx}.npz')
+
+        if not os.path.exists(npz_path):
+            raise FileNotFoundError(f"Duogrid NPZ file not found: {npz_path}")
+
+        # Load all arrays from NPZ
+        data = np.load(npz_path)
+        print(f"Loading duogrid from: {npz_path}")
+
+        # Distribute each field via Global2Local
+        cls._distribute_fields(data)
+
+        # Initialize calculation fields (inner/outer masks, ocean depth)
+        cls._init_calculations()
+
+        print("Duogrid initialized successfully.")
         return cls
 
     @classmethod
-    def _init_from_cfms_global_grid(cls) -> None:
-        """Populate duogrid fields using cFMS global_grid getters."""
-          
-        mp = cls.mp
+    def _distribute_fields(cls, data) -> None:
+        """Distribute grid fields from NPZ data via Global2Local."""
+        distribute = Global2Local.distribute
 
-        # set up global_grid (allocate Fortran.Runtime.class gg)
-        cls.init_with_mp(**cls._map)
+        # ---- 2D A-grid fields ----
+        for name in ['a_x', 'a_y', 'a_kik_x', 'a_kik_y',
+                      'a_sina', 'a_cosa', 'a_dx', 'a_dy',
+                      'a_da', 'rda', 'rdx', 'rdy',
+                      'a_f', 'ub', 'vb']:
+            if name in data:
+                setattr(cls, name, distribute(jnp.array(data[name])))
 
-        # Fortran -> Numpy (Using Fortran.Runtime.class gg)
-        a = cls.get_all_a_grid(mp.isd, mp.ied, mp.jsd, mp.jed)
-        bcd = cls.get_all_bc_d_grid(mp.isd, mp.ied, mp.jsd, mp.jed)
+        # k2e_loc (integer field)
+        if 'k2e_loc' in data:
+            cls.k2e_loc = distribute(jnp.array(data['k2e_loc'], dtype=jnp.int32))
 
-        # Numpy -> Python (Using Python.backend Field)
-        cls._assign_grid_fields(a, bcd) 
-        
-        # close global_grid (deallocate Fortran.Runtime.class gg)
-        cls.end()
+        # ---- 3D A-grid fields ----
+        for name in ['a_pt', 'k2e_coef']:
+            if name in data:
+                setattr(cls, name, distribute(jnp.array(data[name])))
+
+        # ---- 4D A-grid fields ----
+        for name in ['a_gco', 'a_gct', 'a_c2l', 'a_l2c']:
+            if name in data:
+                setattr(cls, name, distribute(jnp.array(data[name])))
+
+        # ---- B-grid (Strip halos 3:-3 in both x and y) ----
+        if 'b_pt' in data:
+            cls.b_pt = distribute(jnp.array(data['b_pt']))
+
+        # ---- C-grid (Strip halos 3:-3 in x only) ----
+        for name in ['c_gco', 'c_gct', 'c_ct2ort_x', 'c_ort2ct_x',
+                     'c_sina', 'c_cosa', 'c_dy', 'c_dx']:
+            if name in data:
+                val = jnp.array(data[name])
+                setattr(cls, name, distribute(val))
+
+        # ---- D-grid (Strip halos 3:-3 in y only) ----
+        for name in ['d_gco', 'd_gct', 'd_ct2ort_y', 'd_ort2ct_y',
+                     'd_sina', 'd_cosa', 'd_dx', 'd_dy']:
+            if name in data:
+                setattr(cls, name, distribute(jnp.array(data[name])))
 
     @classmethod
-    def _assign_grid_fields(cls, a: dict, bcd: dict) -> None:
-        """
-        Assign all grid fields from raw arrays to Field objects.
+    def _init_calculations(cls) -> None:
+        """Initialize derived calculation fields."""
+        cls._init_inner_outer_fields()
+        cls._ocean_depth()
+
+    @classmethod
+    def _init_inner_outer_fields(cls) -> None:
+        """Initialize inner/outer masks using Global2Local.zeros."""
+        h = cls.halo
         
-        Args:
-            a: Dictionary containing A-grid arrays
-            bcd: Dictionary containing B/C/D-grid arrays
-        """
-        # assign A-grid 2D (with Python.backend Field)
-        cls.a_x = Field.array(a["a_x"])
-        cls.a_y = Field.array(a["a_y"]) 
-        cls.a_kik_x = Field.array(a["a_kik_x"]) 
-        cls.a_kik_y = Field.array(a["a_kik_y"]) 
-        cls.a_sina = Field.array(a["a_sina"]) 
-        cls.a_cosa = Field.array(a["a_cosa"]) 
-        cls.a_dx = Field.array(a["a_dx"])
-        cls.a_dy = Field.array(a["a_dy"]) 
-        cls.a_da = Field.array(a["a_da"]) 
-        cls.rda = Field.array(a["rda"]) 
-        cls.rdx = Field.array(a["rdx"]) 
-        cls.rdy = Field.array(a["rdy"]) 
-        cls.k2e_loc = Field.array(a["k2e_loc"])
-        cls.a_f = Field.array(a["a_f"])
-        cls.ub = Field.array(a["ub"])
-        cls.vb = Field.array(a["vb"])
-        
-        # assign A-grid 3D (store in shape (ni, nj, 2))
-        cls.k2e_coef = Field.array(np.transpose(a["k2e_coef"], (1, 2, 0)))
-        cls.a_pt = Field.array(np.transpose(a["a_pt"], (1, 2, 0)))
+        # inner: zeros everywhere, ones in interior
+        cls.inner = Global2Local.zeros('2d')
+        cls.inner = cls.inner.at[:, h:-h, h:-h].set(1.0)
 
-        # assign 4D A-grid
-        cls.a_gco = Field.array(np.transpose(a["a_gco"], (2, 3, 0, 1)))
-        cls.a_gct = Field.array(np.transpose(a["a_gct"], (2, 3, 0, 1)))
-        cls.a_c2l = Field.array(np.transpose(a["a_c2l"], (2, 3, 0, 1)))
-        cls.a_l2c = Field.array(np.transpose(a["a_l2c"], (2, 3, 0, 1)))
+        # outer: ones everywhere, zeros in interior
+        cls.outer = jnp.ones_like(cls.inner)
+        cls.outer = cls.outer.at[:, h:-h, h:-h].set(0.0)
 
-        # B-grid / C-grid / D-grid
-        cls.b_pt = Field.array(np.transpose(bcd["b_pt"], (1, 2, 0)))
-
-        cls.c_gco = Field.array(np.transpose(bcd["c_gco"], (2, 3, 0, 1)))
-        cls.c_gct = Field.array(np.transpose(bcd["c_gct"], (2, 3, 0, 1)))
-        cls.c_ct2ort_x = Field.array(np.transpose(bcd["c_ct2ort_x"], (2, 3, 0, 1)))
-        cls.c_ort2ct_x = Field.array(np.transpose(bcd["c_ort2ct_x"], (2, 3, 0, 1)))
-        cls.c_sina = Field.array(bcd["c_sina"]) 
-        cls.c_cosa = Field.array(bcd["c_cosa"]) 
-        cls.c_dy = Field.array(bcd["c_dy"]) 
-        cls.c_dx = Field.array(bcd["c_dx"])
-
-        cls.d_gco = Field.array(np.transpose(bcd["d_gco"], (2, 3, 0, 1)))
-        cls.d_gct = Field.array(np.transpose(bcd["d_gct"], (2, 3, 0, 1)))
-        cls.d_ct2ort_y = Field.array(np.transpose(bcd["d_ct2ort_y"], (2, 3, 0, 1)))
-        cls.d_ort2ct_y = Field.array(np.transpose(bcd["d_ort2ct_y"], (2, 3, 0, 1)))
-        cls.d_sina = Field.array(bcd["d_sina"]) 
-        cls.d_cosa = Field.array(bcd["d_cosa"]) 
-        cls.d_dx = Field.array(bcd["d_dx"])
-        cls.d_dy = Field.array(bcd["d_dy"])
-
-        # test
-        print("--- Checking live Duogrid data ---")
-        # Let's check cls.a_x and cls.a_pt directly since they are Field.array/numpy arrays
-        a_pt = np.array(cls.a_pt)
-        print(f"live a_pt shape: {a_pt.shape}",cls.mp.tile)
-        print(f"  a_pt point(49, 50, :): \n{a_pt[49, 50, :]}",cls.mp.tile)
-        print(f"  a_pt sum: {a_pt.sum():.6g}",cls.mp.tile)
-        print("----------------------------------\n")
+    @classmethod
+    def _ocean_depth(cls) -> None:
+        """Initialize ocean depth fields using Global2Local.zeros."""
+        cls.dzph = Global2Local.zeros('2d').at[:,:,:].set(5600.0)
+        cls.dzph_x = Global2Local.zeros('2d').at[:,:,:].set(5600.0)
+        cls.dzph_y = Global2Local.zeros('2d').at[:,:,:].set(5600.0)
+        cls.kmt = Global2Local.zeros('2d').at[:,:,:].set(30.0)
+        cls.vit = Global2Local.zeros('3d').at[:,:,:,:].set(1.0)

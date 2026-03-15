@@ -1,70 +1,54 @@
 """
 File: initial_all.py
-Description: Main initialization class for LICOM model, setting up namelist,
-    MPP configuration, and duogrid for the cubed-sphere mosaic.
+Description: Main initialization class for LICOM model.
+    Refactored to remove Fortran/MPI dependencies, using native JAX.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
-Updated: 2026-01-04
+Updated: 2026-03-15
 
-REVISION HISTORY:·
+REVISION HISTORY:
     03/09/2025 - Initial implementation of Initial class
     04/01/2026 - Added timer to initialization steps
+    15/03/2026 - Removed FMS_chtholly, use NPZ + GPU_Mesh + Global2Local
 """
 
 # Local application imports
 from mymodule import Schedule, Timer, get_all_time
-from datatype import momentum_data
-from operators.agrid import agrid_vorticity, agrid_div, agrid_grad
 from readnamelist import Namelist
-from backend import FMS_chtholly
-from backend.calculation.field import Field
+from mesh.g2l import Global2Local
 from duogrid import Dg
-from operators.poly import vector_interpolation_ew, scalar_interpolation_x, scalar_interpolation_y
-from operators.remap import to_c_grid, to_d_grid, to_d_grid_upwind, to_a_grid, vector_trans_2d
-from momentum.momentum import Momentum
-from initial.w92_field import initialize_test_velocity_field
 from mesh.gpu_mesh import GPU_Mesh
+from momentum.momentum import Momentum
 
 # Third-party imports
 import jax.numpy as jnp
-import numpy as np
+
 
 class Initial:
 
     namelist: Namelist
-    
+
     def __init__(self):
 
-        with Timer(name = "initial", enabled=True):
-            # namelist init
+        with Timer(name="initial", enabled=True):
+            # 1. Namelist
             self.namelist = Namelist.create()
 
-            # backend.FMS_chtholly init
-            FMS_chtholly.configure(self.namelist)
-
-            # backend.calculation init
-            Field.configure(FMS_chtholly.mp)
-
-            # duogrid init
-            Dg.configure(FMS_chtholly.mp)
-
-            # mesh init
+            # 2. GPU Mesh (sets up JAX device mesh, sharding, Global2Local, Communication)
             GPU_Mesh.configure(self.namelist)
 
-            # momentum init
-            self.momentum = Momentum()
+            # 3. Global2Local configuration (already done in GPU_Mesh.configure)
+            pass
 
-            # schedule init
+            # 4. Duogrid (loads NPZ and distributes via Global2Local)
+            Dg.configure(self.namelist, GPU_Mesh)
+
+            # 5. Momentum
+            self.momentum = Momentum(self.namelist)
+
+            # 6. Schedule
             Schedule.configure(self.namelist, ["barotropic"])
 
         time_init = get_all_time()
-        if FMS_chtholly.mp.pe == 0:
-            print(f"Initialization completed successfully in {time_init[0].to_dict()['mean']:.4f} seconds.")
-
-    def __del__(self):
-        """
-        Destructor: automatically called when the object is about to be destroyed.
-        Ensures FMS end is called, similar to how __init__ is used for initialization.
-        """
-        FMS_chtholly.end()
+        print(f"Initialization completed successfully in {time_init[0].to_dict()['mean']:.4f} seconds.")

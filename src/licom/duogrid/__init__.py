@@ -5,7 +5,7 @@ Description: Package initialization for duogrid module, providing
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2026-01-07
-Updated: 2026-01-07
+Updated: 2026-03-15
 """
 
 from .duogrid import Duogrid as Dg

@@ -18,8 +18,8 @@ import functools
 from typing import Tuple
 
 # Local application imports
-from backend.calculation.field import Field
-from backend.cube_grid.use_mpp import FMS_chtholly
+
+from mesh.communication import Communication
 from duogrid import Dg
 
 
@@ -44,23 +44,21 @@ def spherical_to_cubed_velocity_field(ubar: float, alpha:Optional[float] = 0.0) 
     """
     
     # Extract longitude and latitude from duogrid
-    # a_pt has shape (ni, nj, 2) where [:, :, 0] is lon, [:, :, 1] is lat
-    lon = Dg.a_pt[:, :, 0]  # longitude
-    lat = Dg.a_pt[:, :, 1]  # latitude
+    # a_pt has shape (ntile, ni, nj, 2) where [..., 0] is lon, [..., 1] is lat
+    lon = Dg.a_pt[..., 0]  # longitude
+    lat = Dg.a_pt[..., 1]  # latitude
     
     # Calculate spherical velocity components (lat-lon coordinates)
-    # u_rll[0]: longitudinal component
-    # u_rll[1]: latitudinal component
     u_rll_lon = ubar * (jnp.cos(alpha) * jnp.cos(lat) + 
                         jnp.sin(alpha) * jnp.cos(lon) * jnp.sin(lat))
     u_rll_lat = -ubar * jnp.sin(alpha) * jnp.sin(lon)
     
     # Transform from lat-lon to cubed-sphere coordinates using transformation matrix
-    # a_l2c has shape (ni, nj, 2, 2) - transformation matrix from lat-lon to cubed
-    u_cubed = (Dg.a_l2c[:, :, 0, 0] * u_rll_lon + 
-               Dg.a_l2c[:, :, 0, 1] * u_rll_lat)
-    v_cubed = (Dg.a_l2c[:, :, 1, 0] * u_rll_lon + 
-               Dg.a_l2c[:, :, 1, 1] * u_rll_lat)
+    # a_l2c has shape (ntile, ni, nj, 2, 2)
+    u_cubed = (Dg.a_l2c[..., 0, 0] * u_rll_lon + 
+               Dg.a_l2c[..., 0, 1] * u_rll_lat)
+    v_cubed = (Dg.a_l2c[..., 1, 0] * u_rll_lon + 
+               Dg.a_l2c[..., 1, 1] * u_rll_lat)
     
     return u_cubed, v_cubed
 
@@ -91,51 +89,45 @@ def cubed_to_spherical_velocity_field(u_cubed: Any,
     return u_lon, u_lat
 
 
-def initialize_test_velocity_field(momentum = None, test_case: str = 'w92case2') -> None:
-    """
-    Initialize test velocity fields for validation and testing.
-    
-    Args:
-        momentum: Momentum object
-        test_case: Type of test case to initialize
-                  
-    Returns:
-        tuple: (u_field, v_field) - Initialized velocity fields
-    """
-    
-        
-    if test_case == 'w92case2' and momentum is not None:
-        # Uniform eastward flow
-        ubar = 1.0  # m/s
-        alpha = 0.0  # Pure zonal (eastward)
+@functools.partial(jax.jit, static_argnames=("test_case",))
+def initialize_test_velocity_field_jit(ub_in: Any, vb_in: Any, h0_in: Any, test_case: str = 'w92case2') -> Tuple[Any, Any, Any]:
+    """JIT version of velocity initialization for sharding safety."""
+    if test_case == 'w92case2':
+        ubar = 1.0
+        alpha = 0.0
         ub, vb = spherical_to_cubed_velocity_field(ubar, alpha)
-        momentum.ub = momentum.ub.at[:].set(ub)
-        momentum.vb = momentum.vb.at[:].set(vb)
-
-        # ssh field
+        
         radius = 6.371e6
         omega = 7.292e-5
         grav = 9.80
 
-        lon = Dg.a_pt[:, :, 0]  # longitude
-        lat = Dg.a_pt[:, :, 1]  # latitude
-        momentum.h0 = momentum.h0.at[:].set(
-            -(radius*omega*ubar+ubar**2/2.) * 
-            (
-                (
-                    -jnp.cos(lon)*jnp.cos(lat)*jnp.sin(alpha)+jnp.sin(lat)*jnp.cos(alpha)
-                )**2 - 1.0/3.0
-            )/grav
-        )
+        lon = Dg.a_pt[..., 0]
+        lat = Dg.a_pt[..., 1]
+        h0 = -(radius*omega*ubar+ubar**2/2.) * (
+            (-jnp.cos(lon)*jnp.cos(lat)*jnp.sin(alpha)+jnp.sin(lat)*jnp.cos(alpha))**2 - 1.0/3.0
+        )/grav
+        
+        return ub, vb, h0
+    else:
+        return ub_in, vb_in, h0_in
+
+def initialize_test_velocity_field(momentum = None, test_case: str = 'w92case2') -> None:
+    """Initialize test velocity fields using JIT for sharding safety."""
+    if momentum is not None:
+        ub, vb, h0 = initialize_test_velocity_field_jit(momentum.ub, momentum.vb, momentum.h0, test_case)
+        # 直接用返回结果替换字段，避免形状 / sharding 广播问题
+        momentum.ub = ub
+        momentum.vb = vb
+        momentum.h0 = h0
 
         # extend halo
-        momentum.ub, momentum.vb = FMS_chtholly.ext_vector(momentum.ub, momentum.vb)
-        momentum.h0 = FMS_chtholly.ext_scalar(momentum.h0)
+        momentum.ub, momentum.vb = Communication.boundary_communication(momentum.ub, momentum.vb)
+        momentum.h0 = Communication.update_domain(momentum.h0)
 
         # ubp, vbp, h0p
-        momentum.ubp = momentum.ubp.at[:].set(momentum.ub)
-        momentum.vbp = momentum.vbp.at[:].set(momentum.vb)
-        momentum.h0p = momentum.h0p.at[:].set(momentum.h0)
+        momentum.ubp = momentum.ub
+        momentum.vbp = momentum.vb
+        momentum.h0p = momentum.h0
 
 
 

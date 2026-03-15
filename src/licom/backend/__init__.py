@@ -1,2 +1,1 @@
-from .cube_grid.use_mpp import FMS_chtholly
-from .calculation.field import Field
+# No exports needed here anymore, Field is deleted and Global2Local is used directly from mesh.g2l

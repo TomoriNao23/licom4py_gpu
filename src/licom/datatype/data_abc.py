@@ -1,5 +1,5 @@
-from backend.calculation.field import Field
+from mesh.g2l import Global2Local
 
 class DataABC():
     def __init__(self) -> None:
-        Field.allocate(self, self._field)
+        Global2Local.allocate(self, self._field)
