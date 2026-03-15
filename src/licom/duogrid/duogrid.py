@@ -137,4 +137,10 @@ class Duogrid:
         cls.d_dy = Field.array(bcd["d_dy"])
 
         # test
-        #Field.gather_tiles_with_id(a["a_x"], cls.mp.tile)
+        print("--- Checking live Duogrid data ---")
+        # Let's check cls.a_x and cls.a_pt directly since they are Field.array/numpy arrays
+        a_pt = np.array(cls.a_pt)
+        print(f"live a_pt shape: {a_pt.shape}",cls.mp.tile)
+        print(f"  a_pt point(49, 50, :): \n{a_pt[49, 50, :]}",cls.mp.tile)
+        print(f"  a_pt sum: {a_pt.sum():.6g}",cls.mp.tile)
+        print("----------------------------------\n")

@@ -54,8 +54,23 @@ def gather_tiles_with_id(data, tile):
         # 3. rank 0 按 tile 重排
         if rank == 0:
             tiles = {}
+            # We can detect nx from the local geometry in python FMS wrapper
+            # It's exposed by FMS_chtholly.mp.nx
+            from use_mpp import FMS_chtholly
+            nx = FMS_chtholly.mp.nx
+            target_dim = nx + 6
+
             for r in range(size):
-                tiles[tile_ids[r]] = recvbuf[r]
+                arr = recvbuf[r]
+                # Slice logic: check each dimension of the array.
+                # If its size is nx + 6, apply slice [3:-3]
+                slices = []
+                for dim_size in arr.shape:
+                    if dim_size == target_dim:
+                        slices.append(slice(3, -3))
+                    else:
+                        slices.append(slice(None))
+                tiles[tile_ids[r]] = arr[tuple(slices)]
 
             # 保证 tile 顺序
             tiles_all = np.stack(
@@ -89,11 +104,21 @@ def generate(nx: int):
     all_data = {}
 
     for key, data in a.items():
+        if key in ["k2e_coef", "a_pt"]:
+            data = np.ascontiguousarray(np.transpose(data, (1, 2, 0)))
+        elif key in ["a_gco", "a_gct", "a_c2l", "a_l2c"]:
+            data = np.ascontiguousarray(np.transpose(data, (2, 3, 0, 1)))
+            
         gathered = gather_tiles_with_id(data, mp.tile)
         if rank == 0 and gathered is not None:
             all_data[key] = gathered
 
     for key, data in bcd.items():
+        if key in ["b_pt"]:
+            data = np.ascontiguousarray(np.transpose(data, (1, 2, 0)))
+        elif key in ["c_gco", "c_gct", "c_ct2ort_x", "c_ort2ct_x", "d_gco", "d_gct", "d_ct2ort_y", "d_ort2ct_y"]:
+            data = np.ascontiguousarray(np.transpose(data, (2, 3, 0, 1)))
+
         gathered = gather_tiles_with_id(data, mp.tile)
         if rank == 0 and gathered is not None:
             all_data[key] = gathered
