@@ -15,11 +15,14 @@ from typing import Optional
 import jax
 import jax.numpy as jnp
 import functools
+from jax.experimental.pjit import pjit
+from jax.sharding import PartitionSpec as P
 from typing import Tuple
 
 # Local application imports
 
 from mesh.communication import Communication
+from mesh.gpu_mesh import GPU_Mesh
 from duogrid import Dg
 
 
@@ -89,7 +92,10 @@ def cubed_to_spherical_velocity_field(u_cubed: Any,
     return u_lon, u_lat
 
 
-@functools.partial(jax.jit, static_argnames=("test_case",))
+@functools.partial(pjit, 
+                   static_argnames=("test_case",),
+                   in_shardings=(P('tile', 'x', 'y'), P('tile', 'x', 'y'), P('tile', 'x', 'y')),
+                   out_shardings=(P('tile', 'x', 'y'), P('tile', 'x', 'y'), P('tile', 'x', 'y')))
 def initialize_test_velocity_field_jit(ub_in: Any, vb_in: Any, h0_in: Any, test_case: str = 'w92case2') -> Tuple[Any, Any, Any]:
     """JIT version of velocity initialization for sharding safety."""
     if test_case == 'w92case2':
@@ -114,7 +120,8 @@ def initialize_test_velocity_field_jit(ub_in: Any, vb_in: Any, h0_in: Any, test_
 def initialize_test_velocity_field(momentum = None, test_case: str = 'w92case2') -> None:
     """Initialize test velocity fields using JIT for sharding safety."""
     if momentum is not None:
-        ub, vb, h0 = initialize_test_velocity_field_jit(momentum.ub, momentum.vb, momentum.h0, test_case)
+        with GPU_Mesh.mesh:
+            ub, vb, h0 = initialize_test_velocity_field_jit(momentum.ub, momentum.vb, momentum.h0, test_case)
         # 直接用返回结果替换字段，避免形状 / sharding 广播问题
         momentum.ub = ub
         momentum.vb = vb

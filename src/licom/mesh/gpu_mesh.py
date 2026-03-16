@@ -49,11 +49,10 @@ class GPU_Mesh:
             )
 
         used = np.array(devices[:n_mesh]).reshape(cls.pdev, cls.px, cls.py)
-        # mesh 轴命名为 (tile, x, y)，后续 pjit 可直接使用 P('tile','x','y')
         cls.devices = used
         cls.mesh = Mesh(cls.devices, ('tile', 'x', 'y'))
-        cls.sharding_2d = NamedSharding(cls.mesh, P('tile', 'x', 'y'))
+        #cls.sharding_2d = NamedSharding(cls.mesh, P('tile', 'x', 'y'))
 
         # Global2Local and Communication now use this sharding
-        Global2Local.configure(cls.sharding_2d, cls.halo, cls.nx_local, cls.ny_local, cls.npz, cls.ntile)
+        Global2Local.configure(cls.mesh, cls.halo, cls.nx_local, cls.ny_local, cls.npz, cls.ntile)
         Communication.configure(cls.halo, cls.nx_local, cls.ny_local, cls.mesh)

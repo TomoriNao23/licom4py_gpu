@@ -62,15 +62,7 @@ def gather_tiles_with_id(data, tile):
 
             for r in range(size):
                 arr = recvbuf[r]
-                # Slice logic: check each dimension of the array.
-                # If its size is nx + 6, apply slice [3:-3]
-                slices = []
-                for dim_size in arr.shape:
-                    if dim_size == target_dim:
-                        slices.append(slice(3, -3))
-                    else:
-                        slices.append(slice(None))
-                tiles[tile_ids[r]] = arr[tuple(slices)]
+                tiles[tile_ids[r]] = arr
 
             # 保证 tile 顺序
             tiles_all = np.stack(
@@ -81,12 +73,12 @@ def gather_tiles_with_id(data, tile):
 
         return None
 
-def generate(nx: int):
+def generate(nx: int, px: int, py: int):
     # NOTE: Do NOT import mpi4py before chtholly_init!
     # mpi4py calls MPI_Init() at import time, which causes FMS mpp_init to
     # abort because MPI is already initialized but no localcomm was provided.
     # Instead, use FMS library functions to get rank after FMS is initialized.
-    FMS_chtholly.configure(nx)
+    FMS_chtholly.configure(nx, px, py)
     rank = FMS_chtholly._lib.chtholly_get_mpp_pe()
     mp = FMS_chtholly.mp
 
@@ -102,6 +94,7 @@ def generate(nx: int):
 
     # Gather data across processes
     all_data = {}
+    target_dim = nx + 6
 
     for key, data in a.items():
         if key in ["k2e_coef", "a_pt"]:
@@ -111,7 +104,14 @@ def generate(nx: int):
             
         gathered = gather_tiles_with_id(data, mp.tile)
         if rank == 0 and gathered is not None:
-            all_data[key] = gathered
+            # Slicing: if dimension is 103 (nx+6+1), slice to 102
+            slices = []
+            for dim_size in gathered.shape:
+                if dim_size > target_dim and dim_size <= target_dim + 1:
+                     slices.append(slice(0, target_dim))
+                else:
+                     slices.append(slice(None))
+            all_data[key] = gathered[tuple(slices)]
 
     for key, data in bcd.items():
         if key in ["b_pt"]:
@@ -121,10 +121,21 @@ def generate(nx: int):
 
         gathered = gather_tiles_with_id(data, mp.tile)
         if rank == 0 and gathered is not None:
-            all_data[key] = gathered
+            # Slicing: if dimension is 103 (nx+6+1), slice to 102
+            slices = []
+            for dim_size in gathered.shape:
+                if dim_size > target_dim and dim_size <= target_dim + 1:
+                     slices.append(slice(0, target_dim))
+                else:
+                     slices.append(slice(None))
+            all_data[key] = gathered[tuple(slices)]
 
     # Save to file named by resolution: duogrid_C{nx}.npz in CWD (field/)
     if rank == 0:
+        print("Gathered arrays dimension summary:")
+        for name, arr in all_data.items():
+            print(f"  {name:15}: {arr.shape}")
+
         out_file = os.path.join(os.getcwd(), f"duogrid_C{nx}.npz")
         np.savez(out_file, **all_data)
         print(f"Duogrid data generated successfully: {out_file}")
@@ -140,5 +151,7 @@ if __name__ == "__main__":
         default=int(os.environ.get("FIELD_NX", 96)),
         help="Grid resolution (default: FIELD_NX env var, then 96)"
     )
+    parser.add_argument("--px", type=int, default=1)
+    parser.add_argument("--py", type=int, default=1)
     args = parser.parse_args()
-    generate(nx=args.nx)
+    generate(nx=args.nx, px=args.px, py=args.py)

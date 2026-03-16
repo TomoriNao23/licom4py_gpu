@@ -47,10 +47,10 @@ class FMS_chtholly:
     communication2d: Callable
 
     @classmethod
-    def configure(cls, size:int) -> None:
+    def configure(cls, size:int, px:int, py:int) -> None:
 
        cls._load_chtholly_library()
-       cls._lib.chtholly_init(ctypes.c_int(size), ctypes.c_int(size), ctypes.c_int(1), ctypes.c_int(1))
+       cls._lib.chtholly_init(ctypes.c_int(size), ctypes.c_int(size), ctypes.c_int(px), ctypes.c_int(py))
        cls._mp_init(size)
 
     @classmethod

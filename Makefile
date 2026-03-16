@@ -19,6 +19,7 @@ run:
 		echo "=========================================="; \
 		export PYTHONPYCACHEPREFIX=$(PYTHONPYCACHEPREFIX); \
 		export XLA_PYTHON_CLIENT_ALLOCATOR=platform; \
+		export XLA_FLAGS=--xla_force_host_platform_device_count=6; \
 		NX=$$(python -c "import configparser; \
 		c=configparser.ConfigParser(); \
 		c.read(\"src/licom/namelist\"); \
@@ -45,13 +46,22 @@ field:
 		c=configparser.ConfigParser(); \
 		c.read(\"src/licom/namelist\"); \
 		print(int(c[\"grid\"][\"nx\"]))"); \
-		echo "Resolution: C$${NX}"; \
+		PX=$$(python -c "import configparser; \
+		c=configparser.ConfigParser(); \
+		c.read(\"src/licom/namelist\"); \
+		print(int(c[\"gpu_mesh\"][\"px\"]))"); \
+		PY=$$(python -c "import configparser; \
+		c=configparser.ConfigParser(); \
+		c.read(\"src/licom/namelist\"); \
+		print(int(c[\"gpu_mesh\"][\"py\"]))"); \
+		NP=$$((PX * PY * 6)); \
+		echo "Resolution: C$${NX}, PX: $${PX}, PY: $${PY}, Total PEs: $${NP}"; \
 		cd field && \
 		export PYTHONPYCACHEPREFIX=$(PYTHONPYCACHEPREFIX); \
 		export XLA_PYTHON_CLIENT_ALLOCATOR=platform; \
 		export JAX_ENABLE_X64=1; \
 		PYTHONPATH=../src/initial_field \
-		mpirun -n 6 python ../src/initial_field/main.py --nx $${NX} \
+		mpirun -n $${NP} python ../src/initial_field/main.py --nx $${NX} --px $${PX} --py $${PY} \
 		2>../logs/field_error.log | cat; \
 		echo "=========================================="; \
 		echo "Field generation finished"; \

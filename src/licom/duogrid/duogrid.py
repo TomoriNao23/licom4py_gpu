@@ -1,11 +1,12 @@
 """
 File: duogrid.py
-Description: Duogrid data structure for grid management in LICOM ocean model.
-    Loads pre-computed grid data from NPZ file and distributes via Global2Local.
+Description: Duogrid data structure for grid management.
+    Now uses the refactored Global2Local for intelligent auto-sharding 
+    of pre-padded arrays.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
-Created: 2025-09-04
-Updated: 2026-03-15 (Refactored: remove Field abstraction, use Global2Local)
+Created: 2026-03-15
+Updated: 2026-03-16
 """
 
 # Standard library imports
@@ -17,34 +18,27 @@ import jax.numpy as jnp
 
 # Local application imports
 from mesh.g2l import Global2Local
+from jax.experimental.pjit import pjit
 
 
 class Duogrid:
     """
     Duogrid data structure for grid management in LICOM ocean model.
     """
-
     # Grid parameters
     ntile: int = 6
     halo: int = 3
-    nx: int = 0
-    ny: int = 0
     nx_local: int = 0
     ny_local: int = 0
 
     @classmethod
     def configure(cls, namelist, gpu_mesh) -> 'Duogrid':
-        """
-        Initialize Duogrid by loading from NPZ and distributing via Global2Local.
-        """
         cls.ntile = gpu_mesh.ntile
         cls.halo = gpu_mesh.halo
-        cls.nx = namelist.nx
-        cls.ny = namelist.ny
         cls.nx_local = gpu_mesh.nx_local
         cls.ny_local = gpu_mesh.ny_local
 
-        # Resolve NPZ file path
+        # 获取 NPZ 路径
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(
             os.path.dirname(os.path.abspath(__file__)))))
         npz_path = os.path.join(project_root, 'field', f'duogrid_C{namelist.nx}.npz')
@@ -52,14 +46,14 @@ class Duogrid:
         if not os.path.exists(npz_path):
             raise FileNotFoundError(f"Duogrid NPZ file not found: {npz_path}")
 
-        # Load all arrays from NPZ
         data = np.load(npz_path)
-        print(f"Loading duogrid from: {npz_path}")
+        print(f"Loading pre-padded duogrid from: {npz_path}")
 
-        # Distribute each field via Global2Local
+        # 使用重构后的分配函数
         cls._distribute_fields(data)
 
-        # Initialize calculation fields (inner/outer masks, ocean depth)
+        # 初始化需要计算生成的屏蔽场和深度场
+        # 这些函数内部会调用 Global2Local.zeros/array 并保持 sharding
         cls._init_calculations()
 
         print("Duogrid initialized successfully.")
@@ -67,72 +61,86 @@ class Duogrid:
 
     @classmethod
     def _distribute_fields(cls, data) -> None:
-        """Distribute grid fields from NPZ data via Global2Local."""
-        distribute = Global2Local.distribute
+        """
+        分发自带 Halo 区的网格场。
+        注意：统一调用 distribute_pre_padded，
+        它会根据 (6, [npz], nx+h, ny+h, [2,2]) 的形状自动判断 'x' 和 'y' 的轴。
+        """
+        dist_fixed = Global2Local.distribute_pre_padded
 
-        # ---- 2D A-grid fields ----
-        for name in ['a_x', 'a_y', 'a_kik_x', 'a_kik_y',
-                      'a_sina', 'a_cosa', 'a_dx', 'a_dy',
-                      'a_da', 'rda', 'rdx', 'rdy',
-                      'a_f', 'ub', 'vb']:
+        # ---- 所有网格场自动分片 ----
+        # 包含了原本 list 中的 a, b, c, d grid 的各种分量
+        fields_to_load = [
+            'a_x', 'a_y', 'a_kik_x', 'a_kik_y', 'a_sina', 'a_cosa', 
+            'a_dx', 'a_dy', 'a_da', 'rda', 'rdx', 'rdy', 'a_f', 'ub', 'vb',
+            'a_pt', 'k2e_coef', 'a_gco', 'a_gct', 'a_c2l', 'a_l2c',
+            'b_pt', 
+            'c_gco', 'c_gct', 'c_ct2ort_x', 'c_ort2ct_x', 'c_sina', 'c_cosa', 'c_dy', 'c_dx',
+            'd_gco', 'd_gct', 'd_ct2ort_y', 'd_ort2ct_y', 'd_sina', 'd_cosa', 'd_dx', 'd_dy'
+        ]
+
+        for name in fields_to_load:
             if name in data:
-                setattr(cls, name, distribute(jnp.array(data[name])))
+                # 显式转换为 jnp 数组后直接按照已有形状分片
+                setattr(cls, name, dist_fixed(jnp.array(data[name], dtype=Global2Local.dtype)))
 
-        # k2e_loc (integer field)
+        # 特殊处理：整数索引字段
         if 'k2e_loc' in data:
-            cls.k2e_loc = distribute(jnp.array(data['k2e_loc'], dtype=jnp.int32))
-
-        # ---- 3D A-grid fields ----
-        for name in ['a_pt', 'k2e_coef']:
-            if name in data:
-                setattr(cls, name, distribute(jnp.array(data[name])))
-
-        # ---- 4D A-grid fields ----
-        for name in ['a_gco', 'a_gct', 'a_c2l', 'a_l2c']:
-            if name in data:
-                setattr(cls, name, distribute(jnp.array(data[name])))
-
-        # ---- B-grid (Strip halos 3:-3 in both x and y) ----
-        if 'b_pt' in data:
-            cls.b_pt = distribute(jnp.array(data['b_pt']))
-
-        # ---- C-grid (Strip halos 3:-3 in x only) ----
-        for name in ['c_gco', 'c_gct', 'c_ct2ort_x', 'c_ort2ct_x',
-                     'c_sina', 'c_cosa', 'c_dy', 'c_dx']:
-            if name in data:
-                val = jnp.array(data[name])
-                setattr(cls, name, distribute(val))
-
-        # ---- D-grid (Strip halos 3:-3 in y only) ----
-        for name in ['d_gco', 'd_gct', 'd_ct2ort_y', 'd_ort2ct_y',
-                     'd_sina', 'd_cosa', 'd_dx', 'd_dy']:
-            if name in data:
-                setattr(cls, name, distribute(jnp.array(data[name])))
+            cls.k2e_loc = dist_fixed(jnp.array(data['k2e_loc'], dtype=jnp.int32))
 
     @classmethod
     def _init_calculations(cls) -> None:
-        """Initialize derived calculation fields."""
+        """初始化计算生成的衍生字段"""
         cls._init_inner_outer_fields()
         cls._ocean_depth()
 
     @classmethod
     def _init_inner_outer_fields(cls) -> None:
-        """Initialize inner/outer masks using Global2Local.zeros."""
-        h = cls.halo
-        
-        # inner: zeros everywhere, ones in interior
-        cls.inner = Global2Local.zeros('2d')
-        cls.inner = cls.inner.at[:, h:-h, h:-h].set(1.0)
+        """使用逻辑计算填充 Mask 场"""
+        # Global2Local.zeros 会根据 '2d' 模板创建 (6, nx_h, ny_h) 的正确 sharding 场
+        inner = Global2Local.zeros('2d')
 
-        # outer: ones everywhere, zeros in interior
-        cls.outer = jnp.ones_like(cls.inner)
-        cls.outer = cls.outer.at[:, h:-h, h:-h].set(0.0)
+        from mesh.gpu_mesh import GPU_Mesh
+        with GPU_Mesh.mesh:
+            ones_full = jnp.ones_like(inner)
+            
+            spec = Global2Local.get_spec(inner.shape)
+            
+            def _set_mask_logic(in_arr, out_arr):
+                h = cls.halo
+                in_arr = in_arr.at[:, h:-h, h:-h].set(1.0)
+                out_arr = out_arr.at[:, h:-h, h:-h].set(0.0)
+                return in_arr, out_arr
+
+            _logic_pjit = pjit(_set_mask_logic, in_shardings=(spec, spec), out_shardings=(spec, spec))
+            cls.inner, cls.outer = _logic_pjit(inner, ones_full)
 
     @classmethod
     def _ocean_depth(cls) -> None:
-        """Initialize ocean depth fields using Global2Local.zeros."""
-        cls.dzph = Global2Local.zeros('2d').at[:,:,:].set(5600.0)
-        cls.dzph_x = Global2Local.zeros('2d').at[:,:,:].set(5600.0)
-        cls.dzph_y = Global2Local.zeros('2d').at[:,:,:].set(5600.0)
-        cls.kmt = Global2Local.zeros('2d').at[:,:,:].set(30.0)
-        cls.vit = Global2Local.zeros('3d').at[:,:,:,:].set(1.0)
+        """初始化海深相关的 2D/3D 场"""
+        
+        # 预先分配具备正确 Sharding 的显存空间
+        dzph_init = Global2Local.zeros('2d')
+        kmt_init = Global2Local.zeros('2d')
+        vit_init = Global2Local.zeros('3d') 
+
+        from mesh.gpu_mesh import GPU_Mesh
+        with GPU_Mesh.mesh:
+            spec_2d = Global2Local.get_spec(dzph_init.shape)
+            spec_3d = Global2Local.get_spec(vit_init.shape)
+
+            def _init_depth_logic(dzph, kmt, vit):
+                # 将全场初始化为恒定值 (dzph=5600, kmt=30层, vit=1.0)
+                dzph = dzph.at[:].set(5600.0)
+                kmt = kmt.at[:].set(30.0)
+                vit = vit.at[:].set(1.0)
+                return dzph, kmt, vit
+
+            _depth_pjit = pjit(_init_depth_logic, 
+                               in_shardings=(spec_2d, spec_2d, spec_3d), 
+                               out_shardings=(spec_2d, spec_2d, spec_3d))
+            
+            cls.dzph, cls.kmt, cls.vit = _depth_pjit(dzph_init, kmt_init, vit_init)
+        # B/C/D grid 的对应场由于在 stencil 计算中可能通过插值得到，这里按需补充
+        cls.dzph_x = cls.dzph
+        cls.dzph_y = cls.dzph

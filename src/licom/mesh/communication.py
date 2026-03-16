@@ -13,6 +13,8 @@ REVISION HISTORY:
 import jax
 import jax.numpy as jnp
 from jax import lax
+from jax.experimental.pjit import pjit
+from jax.sharding import PartitionSpec as P
 
 # ==========================================
 # 1. Topology Class
@@ -180,13 +182,18 @@ class Communication:
         cls._rounds = GreedyColoring.color_edges(edges, Topology.NTILE)
         cls._schedule = GreedyColoring.build_schedule(cls._rounds, Topology.NTILE)
 
-        # Vectorize over the 'tile' axis and JIT compile the update functions
-        cls._update_domain_jit = jax.jit(
-            jax.vmap(cls._update_domain_single, axis_name="tile")
+        # Vectorize over the 'tile' axis and use pjit to preserve sharding
+        # in_shardings and out_shardings enforce P('tile', 'x', 'y') logic
+        cls._update_domain_jit = pjit(
+            jax.vmap(cls._update_domain_single, axis_name="tile"),
+            in_shardings=(P('tile', 'x', 'y'),),
+            out_shardings=P('tile', 'x', 'y')
         )
         
-        cls._boundary_communication_jit = jax.jit(
-            jax.vmap(cls._boundary_communication_single, axis_name="tile")
+        cls._boundary_communication_jit = pjit(
+            jax.vmap(cls._boundary_communication_single, axis_name="tile"),
+            in_shardings=(P('tile', 'x', 'y'), P('tile', 'x', 'y')),
+            out_shardings=(P('tile', 'x', 'y'), P('tile', 'x', 'y'))
         )
 
     # -------------------------------------------------
