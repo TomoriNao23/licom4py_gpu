@@ -74,6 +74,7 @@ class Duogrid:
             'a_x', 'a_y', 'a_kik_x', 'a_kik_y', 'a_sina', 'a_cosa', 
             'a_dx', 'a_dy', 'a_da', 'rda', 'rdx', 'rdy', 'a_f', 'ub', 'vb',
             'a_pt', 'k2e_coef', 'a_gco', 'a_gct', 'a_c2l', 'a_l2c',
+            'k2e_loc_i', 'k2e_loc_j',
             'b_pt', 
             'c_gco', 'c_gct', 'c_ct2ort_x', 'c_ort2ct_x', 'c_sina', 'c_cosa', 'c_dy', 'c_dx',
             'd_gco', 'd_gct', 'd_ct2ort_y', 'd_ort2ct_y', 'd_sina', 'd_cosa', 'd_dx', 'd_dy'

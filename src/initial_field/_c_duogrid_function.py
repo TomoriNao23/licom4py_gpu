@@ -56,6 +56,10 @@ def _define_once():
     lib.chtholly_global_grid_end.argtypes = None
 
     # 2D A-grid
+    lib.chtholly_global_grid_get_k2e_loc_i.restype = None
+    lib.chtholly_global_grid_get_k2e_loc_i.argtypes = [POINTER(c_int)]
+    lib.chtholly_global_grid_get_k2e_loc_j.restype = None
+    lib.chtholly_global_grid_get_k2e_loc_j.argtypes = [POINTER(c_int)]
     lib.chtholly_global_grid_get_a_x_dg.restype = None
     lib.chtholly_global_grid_get_a_x_dg.argtypes = [POINTER(c_double)]
     lib.chtholly_global_grid_get_a_y_dg.restype = None
@@ -232,6 +236,14 @@ def get_all_a_grid(isd: int, ied: int, jsd: int, jed: int):
     arr_i = np.empty(ni_nj, dtype=np.int32, order="F")
     _libc().chtholly_global_grid_get_k2e_loc_dg(arr_i.ctypes.data_as(POINTER(c_int)))
     arrs["k2e_loc"] = arr_i
+
+    arr_loc_i = np.empty(ni_nj, dtype=np.int32, order="F")
+    _libc().chtholly_global_grid_get_k2e_loc_i(arr_loc_i.ctypes.data_as(POINTER(c_int)))
+    arrs["k2e_loc_i"] = arr_loc_i
+
+    arr_loc_j = np.empty(ni_nj, dtype=np.int32, order="F")
+    _libc().chtholly_global_grid_get_k2e_loc_j(arr_loc_j.ctypes.data_as(POINTER(c_int)))
+    arrs["k2e_loc_j"] = arr_loc_j
 
     for name in [
         ("a_gco", _libc().chtholly_global_grid_get_a_gco_dg),

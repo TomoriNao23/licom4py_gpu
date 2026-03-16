@@ -26,6 +26,8 @@ module c_global_grid_mod
   public :: chtholly_global_grid_get_rdx_dg
   public :: chtholly_global_grid_get_rdy_dg
   public :: chtholly_global_grid_get_k2e_loc_dg
+  public :: chtholly_global_grid_get_k2e_loc_i
+  public :: chtholly_global_grid_get_k2e_loc_j
   public :: chtholly_global_grid_get_k2e_coef_dg
   public :: chtholly_global_grid_get_b_pt_dg
   public :: chtholly_global_grid_get_c_gco_dg
@@ -180,6 +182,18 @@ contains
     integer(c_int), intent(out) :: out_arr(size(gg%k2e_loc_dg,1), size(gg%k2e_loc_dg,2))
     out_arr(:,:) = gg%k2e_loc_dg(:,:)
   end subroutine chtholly_global_grid_get_k2e_loc_dg
+
+  subroutine chtholly_global_grid_get_k2e_loc_i(out_arr) bind(C, name="chtholly_global_grid_get_k2e_loc_i")
+    use iso_c_binding, only: c_int
+    integer(c_int), intent(out) :: out_arr(size(gg%k2e_loc_dg,1), size(gg%k2e_loc_dg,2))
+    out_arr(:,:) = gg%k2e_loc_dg(:,:) - gg%isd
+  end subroutine chtholly_global_grid_get_k2e_loc_i
+
+  subroutine chtholly_global_grid_get_k2e_loc_j(out_arr) bind(C, name="chtholly_global_grid_get_k2e_loc_j")
+    use iso_c_binding, only: c_int
+    integer(c_int), intent(out) :: out_arr(size(gg%k2e_loc_dg,1), size(gg%k2e_loc_dg,2))
+    out_arr(:,:) = gg%k2e_loc_dg(:,:) - gg%jsd
+  end subroutine chtholly_global_grid_get_k2e_loc_j
 
   subroutine chtholly_global_grid_get_k2e_coef_dg(out_arr) bind(C, name="chtholly_global_grid_get_k2e_coef_dg")
     use iso_c_binding, only: c_double
