@@ -108,9 +108,5 @@ def initialize_test_velocity_field(momentum = None, test_case: str = 'w92case2')
         momentum.vbp = momentum.vb
         momentum.h0p = momentum.h0
 
-        ub_ct, vb_ct, ub_cx, ub_cy, vb_cx, vb_cy = vector_trans_2d(ub, vb)
-        print(ub[0,2,3],vb[0,2,3],ub_ct[0,2,3],vb_ct[0,2,3],ub_cx[0,2,3],ub_cy[0,2,3],vb_cx[0,2,3],vb_cy[0,2,3])
-        # 手动重算 ub_ct[0,2,3]：(a_gct[0,0]*ub + a_gct[0,1]*vb) * a_sina
-
     else:
         raise ValueError(f"Unknown test case: {test_case}")
