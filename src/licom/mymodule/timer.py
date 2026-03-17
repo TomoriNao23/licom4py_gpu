@@ -18,7 +18,6 @@ from dataclasses import dataclass, field
 
 # Third-party imports
 import jax
-import numpy as np
 
 
 @dataclass
@@ -49,12 +48,12 @@ class TimingStats:
 
 @dataclass
 class MPITimingData:
-    """MPI timing data container"""
+    """Timing data container (MPI-free)"""
     timings: Dict[str, float] = field(default_factory=dict)
     counts: Dict[str, int] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to a dictionary for MPI transmission"""
+        """Convert to a dictionary"""
         return {
             'timings': self.timings.copy(),
             'counts': self.counts.copy()
@@ -62,7 +61,7 @@ class MPITimingData:
 
 
 class SimpleMPITimer:
-    """Lightweight MPI-aware timer"""
+    """Lightweight timer (rank0-only reporting)"""
     
     def __init__(self):
         self._data = MPITimingData()
@@ -87,80 +86,63 @@ class SimpleMPITimer:
             self._data.timings[name] = self._data.timings.get(name, 0.0) + elapsed
             self._data.counts[name] = self._data.counts.get(name, 0) + 1
             del self._start_times[name]
-    
-    def gather_mpi_results(self, comm) -> Optional[List[TimingStats]]:
-        """
-        Gather timing results from all MPI ranks and aggregate them.
 
-        Args:
-            comm: MPI communicator (e.g., MPI.COMM_WORLD)
-
-        Returns:
-            List[TimingStats]: Aggregated statistics on rank 0, None on other ranks.
+    def get_results(self) -> List[TimingStats]:
         """
-        rank = comm.Get_rank()
-        
-        # Gather data from all processes to rank 0
-        all_data = comm.gather(self._data.to_dict(), root=0)
-        
-        if rank == 0:
-            return self._aggregate_mpi_data(all_data)
-        return None
-    
-    def _aggregate_mpi_data(self, all_data: List[Dict]) -> List[TimingStats]:
-        """Aggregate timing data from all processes"""
-        # Collect all component names
-        all_names = set()
-        for data in all_data:
-            all_names.update(data['timings'].keys())
-        
-        # Data from rank 0 (first process)
-        rank0_data = all_data[0] if all_data else {}
-        
-        # Aggregate statistics
-        results = []
-        for name in all_names:
-            times = [data['timings'].get(name, 0.0) for data in all_data]
-            # Use count only from rank 0; do not sum across MPI
-            count = rank0_data['counts'].get(name, 0)
-            
-            stats = TimingStats(
-                name=name,
-                total_time=float(np.sum(times)),
-                count=int(count),
-                mean=float(np.mean(times)),
-                min_time=float(np.min(times)),
-                max_time=float(np.max(times)),
-                std=float(np.std(times))
+        Get timing summary from local process only.
+
+        Notes:
+            - This project no longer aggregates timings via mpi4py.
+            - min/max/std are reported at "per-section average" granularity because
+              we only keep running totals (not per-call samples).
+        """
+        results: List[TimingStats] = []
+        for name, total_time in self._data.timings.items():
+            count = int(self._data.counts.get(name, 0))
+            mean = float(total_time / count) if count > 0 else 0.0
+            results.append(
+                TimingStats(
+                    name=name,
+                    total_time=float(total_time),
+                    count=count,
+                    mean=mean,
+                    min_time=mean,
+                    max_time=mean,
+                    std=0.0,
+                )
             )
-            results.append(stats)
-        
-        return results
+        return self._stable_order(results)
+
+    @staticmethod
+    def _stable_order(results: List[TimingStats]) -> List[TimingStats]:
+        """
+        Make result ordering deterministic for callers.
+
+        Compatibility:
+            - Some callers use get_all_time()[0] and expect "initial" to be first.
+        """
+        by_name = {s.name: s for s in results}
+        ordered: List[TimingStats] = []
+        for preferred in ("initial", "simulation"):
+            if preferred in by_name:
+                ordered.append(by_name.pop(preferred))
+        ordered.extend(sorted(by_name.values(), key=lambda s: s.name))
+        return ordered
     
     def _get_all_time(self) -> Optional[List[TimingStats]]:
         """
-        Get MPI aggregated summary (only on rank 0)
+        Get timing summary from main process only.
         """
-        from mpi4py import MPI
-        rank = MPI.COMM_WORLD.Get_rank()
-        size = MPI.COMM_WORLD.Get_size()
-        
-        results = self.gather_mpi_results(MPI.COMM_WORLD)
-
-        return results
+        results = self.get_results()
+        return results if results else None
 
     def _print_all_time(self) -> None:
         """
-        Print MPI aggregated summary (only on rank 0)
+        Print timing summary from main process only.
         """
-        from mpi4py import MPI
-        rank = MPI.COMM_WORLD.Get_rank()
-        size = MPI.COMM_WORLD.Get_size()
-        
-        results = self.gather_mpi_results(MPI.COMM_WORLD)
-
-        if rank == 0 and results:
-            self._print_summary_table(results, size)
+        results = self.get_results()
+        if results:
+            self._print_summary_table(results, size=1)
     
     def _print_summary_table(self, results: List[TimingStats], size: int) -> None:
         """Print a formatted summary table"""
@@ -287,7 +269,7 @@ def reset_timer() -> None:
     _timer.reset()
 
 def print_all_time(comm=None) -> None:
-    """Print MPI aggregated summary"""
+    """Print timing summary from main process only"""
     _timer._print_all_time()
 
 def stop_timer(name: str) -> None:
@@ -296,7 +278,7 @@ def stop_timer(name: str) -> None:
 
 def get_all_time() -> Optional[List[TimingStats]]:
     """
-    Get MPI aggregated summary
+    Get timing summary from main process only
     """
     results = _timer._get_all_time()    
     return results
