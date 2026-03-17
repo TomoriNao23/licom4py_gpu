@@ -14,13 +14,13 @@ precision = double
 start_year = 2000
 start_month = 1
 start_day = 5
-#integration_days = 1
+integration_days = 1
 #integration_hours = 2
 #integration_months = 3
 
 [grid]
-nx = 1536
-ny = 1536
+nx = 96
+ny = 96
 npz = 30
 
 [gpu_mesh]

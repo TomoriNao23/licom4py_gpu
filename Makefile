@@ -61,7 +61,7 @@ field:
 		export XLA_PYTHON_CLIENT_ALLOCATOR=platform; \
 		export JAX_ENABLE_X64=1; \
 		PYTHONPATH=../src/initial_field \
-		mpirun -n $${NP} python ../src/initial_field/main.py --nx $${NX} --px $${PX} --py $${PY} \
+		mpirun -n $${NP} python ../src/initial_field/main.py --nx $${NX} --px $${PX} --py $${PY} $(if $(FULL),--full,) \
 		2>../logs/field_error.log | cat; \
 		echo "=========================================="; \
 		echo "Field generation finished"; \

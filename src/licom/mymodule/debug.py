@@ -11,9 +11,6 @@ Updated: 2025-09-03
 import sys
 import os
 
-# Local application imports
-from mymodule.exceptions import PyFMSError
-
 # Add src directory to Python path for pyFMS access
 src_path = os.path.join(os.path.dirname(__file__), '..', '..')
 sys.path.insert(0, src_path)

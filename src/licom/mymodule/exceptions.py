@@ -15,7 +15,3 @@ class NamelistError(Exception):
 class InitialError(Exception):
     """Exception raised for errors in the initial."""
     pass
-
-class PyFMSError(Exception):
-    """Exception raised for errors in the pyFMS."""
-    pass
