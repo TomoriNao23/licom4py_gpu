@@ -21,7 +21,7 @@ from operators.poly import (
     scalar_interpolation_xy, vector_interpolation,
     vector_interpolation_ew, vector_interpolation_ns
 )
-from mesh.cube import ext_scalar, ext_vector
+from mesh.cube import Cube
 
 # =====================================================================
 # 1. Physics Operators (Pure Functions)
@@ -99,8 +99,8 @@ def _step_rk_logic(h0, h0p, ub, vb, ubp, vbp, consts, dt, beta_d, is_laststep):
         flux_hu, flux_hv = Communication.boundary_communication(flux_hu, flux_hv)
         
     div_out = agrid_div(flux_hu, flux_hv)
-    new_h0 = h0p #- div_out * dt
-    #new_h0 = ext_scalar(new_h0)
+    new_h0 = h0p - div_out * dt
+    new_h0 = Cube.ext_scalar(new_h0)
     
     h0_tem = fb_scheme(new_h0, h0, beta_d)
     pgf_u, pgf_v = calculate_pgf(h0_tem)
@@ -110,9 +110,9 @@ def _step_rk_logic(h0, h0p, ub, vb, ubp, vbp, consts, dt, beta_d, is_laststep):
     rhs_u = pgf_u + advx + a_f * vb_ct
     rhs_v = pgf_v + advy - a_f * ub_ct
     
-    new_ub = ubp #+ rhs_u * dt
-    new_vb = vbp #+ rhs_v * dt
-    #new_ub, new_vb = ext_vector(new_ub, new_vb)
+    new_ub = ubp + rhs_u * dt
+    new_vb = vbp + rhs_v * dt
+    new_ub, new_vb = Cube.ext_vector(new_ub, new_vb)
     
     return new_h0, new_ub, new_vb, celerity_x, celerity_y, \
            ub_ct, vb_ct, ub_cx, ub_cy, vb_cx, vb_cy, advx, advy

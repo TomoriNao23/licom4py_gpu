@@ -22,11 +22,11 @@ from typing import Tuple
 # Local application imports
 
 from mesh.communication import Communication
+from mesh.cube import Cube
 from mesh.gpu_mesh import GPU_Mesh
 from duogrid import Dg
+from operators.remap import vector_trans_2d
 
-
-@functools.partial(jax.jit, static_argnums=())
 def spherical_to_cubed_velocity_field(ubar: float, alpha:Optional[float] = 0.0) -> Tuple[Any, Any]:
     """
     Convert uniform spherical velocity field to cubed-sphere grid velocity field.
@@ -65,33 +65,6 @@ def spherical_to_cubed_velocity_field(ubar: float, alpha:Optional[float] = 0.0) 
     
     return u_cubed, v_cubed
 
-
-@functools.partial(jax.jit, static_argnums=())
-def cubed_to_spherical_velocity_field(u_cubed: Any, 
-                                     v_cubed: Any) -> Tuple[Any, Any]:
-    """
-    Convert cubed-sphere velocity field to spherical (lat-lon) velocity field.
-    
-    This is the inverse transformation of spherical_to_cubed_velocity_field.
-    
-    Args:
-        u_cubed: U-component velocity in cubed-sphere coordinates
-        v_cubed: V-component velocity in cubed-sphere coordinates
-        
-    Returns:
-        tuple: (u_lon, u_lat) - Velocity components in spherical coordinates
-    """
-    
-    # Transform from cubed-sphere to lat-lon coordinates using inverse transformation matrix
-    # a_c2l has shape (ni, nj, 2, 2) - transformation matrix from cubed to lat-lon
-    u_lon = (Dg.a_c2l[:, :, 0, 0] * u_cubed + 
-             Dg.a_c2l[:, :, 0, 1] * v_cubed)
-    u_lat = (Dg.a_c2l[:, :, 1, 0] * u_cubed + 
-             Dg.a_c2l[:, :, 1, 1] * v_cubed)
-    
-    return u_lon, u_lat
-
-
 @functools.partial(pjit, 
                    static_argnames=("test_case",),
                    in_shardings=(P('tile', 'x', 'y'), P('tile', 'x', 'y'), P('tile', 'x', 'y')),
@@ -127,43 +100,17 @@ def initialize_test_velocity_field(momentum = None, test_case: str = 'w92case2')
         momentum.vb = vb
         momentum.h0 = h0
 
-        # extend halo
-        momentum.ub, momentum.vb = Communication.boundary_communication(momentum.ub, momentum.vb)
-        momentum.h0 = Communication.update_domain(momentum.h0)
+        momentum.h0 = Cube.ext_scalar(momentum.h0)
+        momentum.ub, momentum.vb = Cube.ext_vector(momentum.ub, momentum.vb)
 
         # ubp, vbp, h0p
         momentum.ubp = momentum.ub
         momentum.vbp = momentum.vb
         momentum.h0p = momentum.h0
 
-
+        ub_ct, vb_ct, ub_cx, ub_cy, vb_cx, vb_cy = vector_trans_2d(ub, vb)
+        print(ub[0,2,3],vb[0,2,3],ub_ct[0,2,3],vb_ct[0,2,3],ub_cx[0,2,3],ub_cy[0,2,3],vb_cx[0,2,3],vb_cy[0,2,3])
+        # 手动重算 ub_ct[0,2,3]：(a_gct[0,0]*ub + a_gct[0,1]*vb) * a_sina
 
     else:
         raise ValueError(f"Unknown test case: {test_case}")
-
-
-@functools.partial(jax.jit, static_argnums=())
-def spherical_to_cubed_velocity_field_from_components(u_spherical: Any, 
-                                                     v_spherical: Any) -> Tuple[Any, Any]:
-    """
-    Convert spherical velocity components to cubed-sphere coordinates.
-    
-    This is a helper function when you already have the spherical components
-    rather than computing them from ubar and alpha.
-    
-    Args:
-        u_spherical: Longitudinal velocity component
-        v_spherical: Latitudinal velocity component
-        
-    Returns:
-        tuple: (u_cubed, v_cubed) - Velocity components in cubed coordinates
-    """
-    
-    # Transform using the lat-lon to cubed transformation matrix
-    u_cubed = (Dg.a_l2c[:, :, 0, 0] * u_spherical + 
-               Dg.a_l2c[:, :, 0, 1] * v_spherical)
-    v_cubed = (Dg.a_l2c[:, :, 1, 0] * u_spherical + 
-               Dg.a_l2c[:, :, 1, 1] * v_spherical)
-    
-    return u_cubed, v_cubed
-

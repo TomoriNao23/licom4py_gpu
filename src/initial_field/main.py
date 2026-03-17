@@ -98,37 +98,29 @@ def generate(nx: int, px: int, py: int):
 
     for key, data in a.items():
         if key in ["k2e_coef", "a_pt"]:
-            data = np.ascontiguousarray(np.transpose(data, (1, 2, 0)))
+            data = np.transpose(data, (1, 2, 0))
         elif key in ["a_gco", "a_gct", "a_c2l", "a_l2c"]:
-            data = np.ascontiguousarray(np.transpose(data, (2, 3, 0, 1)))
+            data = np.transpose(data, (2, 3, 0, 1))
+        
+        # Ensure C-contiguous layout for all arrays before gathering
+        data = np.ascontiguousarray(data)
             
         gathered = gather_tiles_with_id(data, mp.tile)
         if rank == 0 and gathered is not None:
-            # Slicing: if dimension is 103 (nx+6+1), slice to 102
-            slices = []
-            for dim_size in gathered.shape:
-                if dim_size > target_dim and dim_size <= target_dim + 1:
-                     slices.append(slice(0, target_dim))
-                else:
-                     slices.append(slice(None))
-            all_data[key] = gathered[tuple(slices)]
+            all_data[key] = gathered
 
     for key, data in bcd.items():
         if key in ["b_pt"]:
-            data = np.ascontiguousarray(np.transpose(data, (1, 2, 0)))
+            data = np.transpose(data, (1, 2, 0))
         elif key in ["c_gco", "c_gct", "c_ct2ort_x", "c_ort2ct_x", "d_gco", "d_gct", "d_ct2ort_y", "d_ort2ct_y"]:
-            data = np.ascontiguousarray(np.transpose(data, (2, 3, 0, 1)))
+            data = np.transpose(data, (2, 3, 0, 1))
+
+        # Ensure C-contiguous layout for all arrays before gathering
+        data = np.ascontiguousarray(data)
 
         gathered = gather_tiles_with_id(data, mp.tile)
         if rank == 0 and gathered is not None:
-            # Slicing: if dimension is 103 (nx+6+1), slice to 102
-            slices = []
-            for dim_size in gathered.shape:
-                if dim_size > target_dim and dim_size <= target_dim + 1:
-                     slices.append(slice(0, target_dim))
-                else:
-                     slices.append(slice(None))
-            all_data[key] = gathered[tuple(slices)]
+            all_data[key] = gathered
 
     # Save to file named by resolution: duogrid_C{nx}.npz in CWD (field/)
     if rank == 0:

@@ -12,170 +12,107 @@ Updated: 2026-03-15
 import jax
 import jax.numpy as jnp
 from .communication import Communication
-from duogrid import Dg
 
-def _transform(u, v, k, range_mask):
+
+def cube_rmp(var, coef, loc_i, loc_j, inner):
     """
-    Transform the vector values between local and canonical coordinates.
+    Vectorized JIT-friendly cube remapping for cubed-sphere grids.
+    Operates on full sharded arrays (ntile, ni, nj) or robust ... slicing.
+
+    Assumptions:
+    - `var` already includes halo points, and boundaries correspond to local tile boundaries:
+      south: [..., :ng], north: [..., -ng:], west: [..., :ng, :], east: [..., -ng:, :]
+    - `loc_i`, `loc_j` are the pre-computed arrays of local indices along the remapping direction.
+    - `coef[..., 0:2]` stores weights for the two-point stencil.
     """
-    ull = (k[..., 0, 0] * u + k[..., 0, 1] * v) * range_mask
-    vll = (k[..., 1, 0] * u + k[..., 1, 1] * v) * range_mask
-    return ull, vll
+    nord = 2
+    ng = Communication.halo if hasattr(Communication, "halo") and Communication.halo > 0 else 3
 
-def cube_rmp(var, coef, loc_arr):
-    """
-    Apply boundary remapping across all tiles using precomputed coefficients.
-    Convert halo/edge values on a cubed-sphere tile using precomputed
-    k2e mappings and coefficients.
+    loc_i = loc_i.astype(jnp.int32)
+    loc_j = loc_j.astype(jnp.int32)
+    k = jnp.arange(nord, dtype=jnp.int32)
 
-    Args:
-        var: (ntile, ni, nj) Array for which boundary remapping is applied.
-        coef: (ntile, ni, nj, nord) k2e coefficients array.
-        loc_arr: (ntile, ni, nj) k2e location array.
+    # South edge
+    sl_s = jnp.s_[..., ng:-ng, :ng]
+    idx0_s = loc_i[sl_s][..., None] + k
+    vals_s = jnp.take_along_axis(var[..., :, :ng][..., None], idx0_s, axis=-3)
+    var = var.at[sl_s].set(jnp.sum(vals_s * coef[..., ng:-ng, :ng, :], axis=-1))
 
-    Returns:
-        The updated `var` after remapping.
-    """
-    # Hardcoded indices for C96 grid as requested
-    isd, jsd, ied, jed = -2, -2, 99, 99
-    is_, js, ie, je = 1, 1, 96, 96
-    
-    # Boundary flags for each tile
-    rmp_s, rmp_n, rmp_w, rmp_e = True, True, True, True
-    
-    var_kik = var
-    offset = 1
-    ntile = var.shape[0]
-    ti = jnp.arange(ntile)[:, jnp.newaxis] # (ntile, 1) to broadcast with spatial indices
+    # North edge
+    sl_n = jnp.s_[..., ng:-ng, -ng:]
+    idx0_n = loc_i[sl_n][..., None] + k
+    vals_n = jnp.take_along_axis(var[..., :, -ng:][..., None], idx0_n, axis=-3)
+    var = var.at[sl_n].set(jnp.sum(vals_n * coef[..., ng:-ng, -ng:, :], axis=-1))
 
-    # South boundary
-    if rmp_s:
-        # ii = 1
-        j = js - 1
-        ii = jnp.arange(is_, ie + 1)
-        locs = loc_arr[:, ii - isd, j - jsd].astype(int)
-        los = locs - offset
-        var = var.at[:, ii - isd, j - jsd].set(0.0)
-        var = var.at[:, ii - isd, j - jsd].add(var_kik[ti, los + 1 - isd, j - jsd] * coef[:, ii - isd, j - jsd, 0])
-        var = var.at[:, ii - isd, j - jsd].add(var_kik[ti, los + 2 - isd, j - jsd] * coef[:, ii - isd, j - jsd, 1])
-        # ii = 2
-        j = js - 2
-        locs = loc_arr[:, ii - isd, j - jsd].astype(int)
-        los = locs - offset
-        var = var.at[:, ii - isd, j - jsd].set(0.0)
-        var = var.at[:, ii - isd, j - jsd].add(var_kik[ti, los + 1 - isd, j - jsd] * coef[:, ii - isd, j - jsd, 0])
-        var = var.at[:, ii - isd, j - jsd].add(var_kik[ti, los + 2 - isd, j - jsd] * coef[:, ii - isd, j - jsd, 1])
-        # ii = 3
-        j = js - 3
-        locs = loc_arr[:, ii - isd, j - jsd].astype(int)
-        los = locs - offset
-        var = var.at[:, ii - isd, j - jsd].set(0.0)
-        var = var.at[:, ii - isd, j - jsd].add(var_kik[ti, los + 1 - isd, j - jsd] * coef[:, ii - isd, j - jsd, 0])
-        var = var.at[:, ii - isd, j - jsd].add(var_kik[ti, los + 2 - isd, j - jsd] * coef[:, ii - isd, j - jsd, 1])
+    # West edge
+    sl_w = jnp.s_[..., :ng, ng:-ng]
+    idx1_w = loc_j[sl_w][..., None] + k
+    vals_w = jnp.take_along_axis(var[..., :ng, :][..., None], idx1_w, axis=-2)
+    var = var.at[sl_w].set(jnp.sum(vals_w * coef[..., :ng, ng:-ng, :], axis=-1))
 
-    # North boundary
-    if rmp_n:
-        ii = jnp.arange(is_, ie + 1)
-        # ii = 1
-        j = je + 1
-        locs = loc_arr[:, ii - isd, j - jsd].astype(int)
-        los = locs - offset
-        var = var.at[:, ii - isd, j - jsd].set(0.0)
-        var = var.at[:, ii - isd, j - jsd].add(var_kik[ti, los + 1 - isd, j - jsd] * coef[:, ii - isd, j - jsd, 0])
-        var = var.at[:, ii - isd, j - jsd].add(var_kik[ti, los + 2 - isd, j - jsd] * coef[:, ii - isd, j - jsd, 1])
-        # ii = 2
-        j = je + 2
-        locs = loc_arr[:, ii - isd, j - jsd].astype(int)
-        los = locs - offset
-        var = var.at[:, ii - isd, j - jsd].set(0.0)
-        var = var.at[:, ii - isd, j - jsd].add(var_kik[ti, los + 1 - isd, j - jsd] * coef[:, ii - isd, j - jsd, 0])
-        var = var.at[:, ii - isd, j - jsd].add(var_kik[ti, los + 2 - isd, j - jsd] * coef[:, ii - isd, j - jsd, 1])
-        # ii = 3
-        j = je + 3
-        locs = loc_arr[:, ii - isd, j - jsd].astype(int)
-        los = locs - offset
-        var = var.at[:, ii - isd, j - jsd].set(0.0)
-        var = var.at[:, ii - isd, j - jsd].add(var_kik[ti, los + 1 - isd, j - jsd] * coef[:, ii - isd, j - jsd, 0])
-        var = var.at[:, ii - isd, j - jsd].add(var_kik[ti, los + 2 - isd, j - jsd] * coef[:, ii - isd, j - jsd, 1])
-              
-    # West boundary
-    if rmp_w:
-        jj = jnp.arange(js, je + 1)
-        # ii = 1
-        i = is_ - 1
-        locs = loc_arr[:, i - isd, jj - jsd].astype(int)
-        los = locs - offset
-        var = var.at[:, i - isd, jj - jsd].set(0.0)
-        var = var.at[:, i - isd, jj - jsd].add(var_kik[ti, i - isd, los + 1 - jsd] * coef[:, i - isd, jj - jsd, 0])
-        var = var.at[:, i - isd, jj - jsd].add(var_kik[ti, i - isd, los + 2 - jsd] * coef[:, i - isd, jj - jsd, 1])
-        # ii = 2
-        i = is_ - 2
-        locs = loc_arr[:, i - isd, jj - jsd].astype(int)
-        los = locs - offset
-        var = var.at[:, i - isd, jj - jsd].set(0.0)
-        var = var.at[:, i - isd, jj - jsd].add(var_kik[ti, i - isd, los + 1 - jsd] * coef[:, i - isd, jj - jsd, 0])
-        var = var.at[:, i - isd, jj - jsd].add(var_kik[ti, i - isd, los + 2 - jsd] * coef[:, i - isd, jj - jsd, 1])
-        # ii = 3
-        i = is_ - 3
-        locs = loc_arr[:, i - isd, jj - jsd].astype(int)
-        los = locs - offset
-        var = var.at[:, i - isd, jj - jsd].set(0.0)
-        var = var.at[:, i - isd, jj - jsd].add(var_kik[ti, i - isd, los + 1 - jsd] * coef[:, i - isd, jj - jsd, 0])
-        var = var.at[:, i - isd, jj - jsd].add(var_kik[ti, i - isd, los + 2 - jsd] * coef[:, i - isd, jj - jsd, 1])
+    # East edge
+    sl_e = jnp.s_[..., -ng:, ng:-ng]
+    idx1_e = loc_j[sl_e][..., None] + k
+    vals_e = jnp.take_along_axis(var[..., -ng:, :][..., None], idx1_e, axis=-2)
+    var = var.at[sl_e].set(jnp.sum(vals_e * coef[..., -ng:, ng:-ng, :], axis=-1))
 
-    # East boundary
-    if rmp_e:
-        jj = jnp.arange(js, je + 1)
-        # ii = 1
-        i = ie + 1
-        locs = loc_arr[:, i - isd, jj - jsd].astype(int)
-        los = locs - offset
-        var = var.at[:, i - isd, jj - jsd].set(0.0)
-        var = var.at[:, i - isd, jj - jsd].add(var_kik[ti, i - isd, los + 1 - jsd] * coef[:, i - isd, jj - jsd, 0])
-        var = var.at[:, i - isd, jj - jsd].add(var_kik[ti, i - isd, los + 2 - jsd] * coef[:, i - isd, jj - jsd, 1])
-        # ii = 2
-        i = ie + 2
-        locs = loc_arr[:, i - isd, jj - jsd].astype(int)
-        los = locs - offset
-        var = var.at[:, i - isd, jj - jsd].set(0.0)
-        var = var.at[:, i - isd, jj - jsd].add(var_kik[ti, i - isd, los + 1 - jsd] * coef[:, i - isd, jj - jsd, 0])
-        var = var.at[:, i - isd, jj - jsd].add(var_kik[ti, i - isd, los + 2 - jsd] * coef[:, i - isd, jj - jsd, 1])
-        # ii = 3
-        i = ie + 3
-        locs = loc_arr[:, i - isd, jj - jsd].astype(int)
-        los = locs - offset
-        var = var.at[:, i - isd, jj - jsd].set(0.0)
-        var = var.at[:, i - isd, jj - jsd].add(var_kik[ti, i - isd, los + 1 - jsd] * coef[:, i - isd, jj - jsd, 0])
-        var = var.at[:, i - isd, jj - jsd].add(var_kik[ti, i - isd, los + 2 - jsd] * coef[:, i - isd, jj - jsd, 1])
-
-    # Copy corners
-    # sw
-    var = var.at[:, 0 : is_ - isd, 0 : js - jsd].set(var[:, is_ - isd : is_ - isd + 1, 0 : js - jsd])
-    # se
-    var = var.at[:, ie + 1 - isd : ied + 1 - isd, 0 : js - jsd].set(var[:, ie - isd : ie - isd + 1, 0 : js - jsd])
-    # ne
-    var = var.at[:, ie + 1 - isd : ied + 1 - isd, je + 1 - jsd : jed + 1 - jsd].set(var[:, ie - isd : ie - isd + 1, je + 1 - jsd : jed + 1 - jsd])
-    # nw
-    var = var.at[:, 0 : is_ - isd, je + 1 - jsd : jed + 1 - jsd].set(var[:, is_ - isd : is_ - isd + 1, je + 1 - jsd : jed + 1 - jsd])
+    # Corners
+    # SW
+    var = var.at[..., :ng, :ng].set(jnp.expand_dims(var[..., ng, :ng], axis=-2))
+    # SE
+    var = var.at[..., -ng:, :ng].set(jnp.expand_dims(var[..., -ng-1, :ng], axis=-2))
+    # NE
+    var = var.at[..., -ng:, -ng:].set(jnp.expand_dims(var[..., -ng-1, -ng:], axis=-2))
+    # NW
+    var = var.at[..., :ng, -ng:].set(jnp.expand_dims(var[..., ng, -ng:], axis=-2))
 
     return var
 
-def ext_scalar(var):
-    """
-    Extend a scalar field across domain boundaries.
-    """
-    var = Communication.update_domain(var)
-    return cube_rmp(var, Dg.k2e_coef, Dg.k2e_loc)
+class Cube:
+    coef = None
+    loc_i = None
+    loc_j = None
+    a_c2l = None
+    a_l2c = None
+    inner = None
+    outer = None
 
-def ext_vector(u, v):
-    """
-    Extend a vector field across domain boundaries.
-    """
-    ull, vll = _transform(u, v, Dg.a_c2l, Dg.inner)
-    ull = ext_scalar(ull)
-    vll = ext_scalar(vll)
-    ull, vll = _transform(ull, vll, Dg.a_l2c, Dg.outer)
-    
-    ull = ull + u * Dg.inner
-    vll = vll + v * Dg.inner
-    return ull, vll
+    @classmethod
+    def configure(cls, coef, loc_i, loc_j, a_c2l, a_l2c, inner, outer):
+        cls.coef = coef
+        cls.loc_i = loc_i
+        cls.loc_j = loc_j
+        cls.a_c2l = a_c2l
+        cls.a_l2c = a_l2c
+        cls.inner = inner
+        cls.outer = outer
+
+    @classmethod
+    def ext_scalar(cls, var):
+        """
+        Exchange scalar values across domain boundaries.
+        """
+        var = Communication.update_domain(var)
+        var = cube_rmp(var, cls.coef, cls.loc_i, cls.loc_j, cls.inner)
+        return var
+
+    @classmethod
+    def ext_vector(cls, u, v):
+        """
+        Exchange vector values across domain boundaries.
+        """
+        ull = (cls.a_c2l[..., 0, 0] * u + cls.a_c2l[..., 0, 1] * v) * cls.inner
+        vll = (cls.a_c2l[..., 1, 0] * u + cls.a_c2l[..., 1, 1] * v) * cls.inner
+
+        ull = cls.ext_scalar(ull)
+        vll = cls.ext_scalar(vll)
+
+        ull_new = (cls.a_l2c[..., 0, 0] * ull + cls.a_l2c[..., 0, 1] * vll) * cls.outer
+        vll_new = (cls.a_l2c[..., 1, 0] * ull + cls.a_l2c[..., 1, 1] * vll) * cls.outer
+
+        u_new = ull_new + u * cls.inner
+        v_new = vll_new + v * cls.inner
+
+        return u_new, v_new
+
+

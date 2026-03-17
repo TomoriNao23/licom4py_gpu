@@ -40,10 +40,10 @@ def agrid_vorticity(vv: jnp.ndarray, uu: jnp.ndarray) -> jnp.ndarray:
 
     vort = jnp.zeros_like(uu).at[..., :-1, :-1].set(
         Dg.rda[..., :-1, :-1] * (
-            uu[..., :-1, :-1] * Dg.d_dx[..., :-1, :-1] +
-            vv[..., 1:, :-1] * Dg.c_dy[..., 1:, :-1] -        # vv(i+1,j) * c_dy(i+1,j) 
-            uu[..., :-1, 1:] * Dg.d_dx[..., :-1, 1:] -        # uu(i,j+1) * d_dx(i,j+1)
-            vv[..., :-1, :-1] * Dg.c_dy[..., :-1, :-1]        # vv(i,j) * c_dy(i,j)
+            uu[..., :-1, :-1] * Dg.d_dx[..., :-1, :-2] +
+            vv[..., 1:, :-1] * Dg.c_dy[..., 1:-1, :-1] -        # vv(i+1,j) * c_dy(i+1,j) 
+            uu[..., :-1, 1:] * Dg.d_dx[..., :-1, 1:-1] -        # uu(i,j+1) * d_dx(i,j+1)
+            vv[..., :-1, :-1] * Dg.c_dy[..., :-2, :-1]        # vv(i,j) * c_dy(i,j)
         )
     )
     
@@ -62,10 +62,10 @@ def agrid_div(uu: jnp.ndarray, vv: jnp.ndarray) -> jnp.ndarray:
     """
     div = jnp.zeros_like(uu).at[..., :-1, :-1].set(
         Dg.rda[..., :-1, :-1] * (
-            uu[..., 1:, :-1] * Dg.c_dy[..., 1:, :-1] -        # UX(i+1,j) * c_dy(i+1,j)
-            uu[..., :-1, :-1] * Dg.c_dy[..., :-1, :-1] +      # UX(i,j) * c_dy(i,j)
-            vv[..., :-1, 1:] * Dg.d_dx[..., :-1, 1:] -        # UY(i,j+1) * d_dx(i,j+1)  
-            vv[..., :-1, :-1] * Dg.d_dx[..., :-1, :-1]        # UY(i,j) * d_dx(i,j)
+            uu[..., 1:, :-1] * Dg.c_dy[..., 1:-1, :-1] -        # UX(i+1,j) * c_dy(i+1,j)
+            uu[..., :-1, :-1] * Dg.c_dy[..., :-2, :-1] +      # UX(i,j) * c_dy(i,j)
+            vv[..., :-1, 1:] * Dg.d_dx[..., :-1, 1:-1] -        # UY(i,j+1) * d_dx(i,j+1)  
+            vv[..., :-1, :-1] * Dg.d_dx[..., :-1, :-2]        # UY(i,j) * d_dx(i,j)
         )
     )
 

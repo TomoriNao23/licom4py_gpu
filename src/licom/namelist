@@ -14,9 +14,9 @@ precision = double
 start_year = 2000
 start_month = 1
 start_day = 1
-integration_days = 1
+#integration_days = 1
 #integration_hours = 2
-#integration_months = 24
+integration_months = 3
 
 [grid]
 nx = 96

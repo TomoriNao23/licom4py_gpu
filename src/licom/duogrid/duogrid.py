@@ -55,6 +55,9 @@ class Duogrid:
         # 初始化需要计算生成的屏蔽场和深度场
         # 这些函数内部会调用 Global2Local.zeros/array 并保持 sharding
         cls._init_calculations()
+        
+        from mesh.cube import Cube
+        Cube.configure(cls.k2e_coef, cls.k2e_loc_i, cls.k2e_loc_j, cls.a_c2l, cls.a_l2c, cls.inner, cls.outer)
 
         print("Duogrid initialized successfully.")
         return cls
