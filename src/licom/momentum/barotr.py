@@ -5,37 +5,37 @@ Description: High-performance barotropic time stepping methods for Momentum clas
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-22
-Updated: 2026-03-15 (Unified JIT and sharding compatibility)
+Updated: 2026-03-19
+
+REVISION HISTORY:
+    22/09/2025 - Initial implementation of barotropic solver
+    15/03/2026 - Unified JIT and sharding compatibility
+    19/03/2026 - Refactor imports to package-level paths
 """
 
 import jax
 import jax.numpy as jnp
 from jax.experimental.pjit import pjit
 from jax.sharding import PartitionSpec as P
-from mesh.communication import Communication
-from mesh.gpu_mesh import GPU_Mesh
-from duogrid import Dg
-from operators.agrid import agrid_div, agrid_grad, agrid_vorticity
-from operators.remap import vector_trans_2d
-from operators.poly import (
-    scalar_interpolation_xy, vector_interpolation,
-    vector_interpolation_ew, vector_interpolation_ns
-)
-from mesh.cube import Cube
+
+# Local application imports
+from licom.mesh import Communication, GPU_Mesh, Cube
+from licom.duogrid import Dg
+from licom.operators import AGrid, Poly, Remap
 
 # =====================================================================
 # 1. Physics Operators (Pure Functions)
 # =====================================================================
 
 def get_celerity(h, dzph_x, dzph_y):
-    hx, hy = scalar_interpolation_xy(h)
+    hx, hy = Poly.scalar_xy(h)
     celerity_x = jnp.sqrt(9.8 * (hx + dzph_x))
     celerity_y = jnp.sqrt(9.8 * (hy + dzph_y))
     return jnp.where(celerity_x < 10.0, 10.0, celerity_x), \
            jnp.where(celerity_y < 10.0, 10.0, celerity_y)
 
 def get_vel_vis_2d(celerity_x, celerity_y, h, u, v):
-    he, hw , hn, hs = vector_interpolation(h)
+    he, hw , hn, hs = Poly.vector(h)
     vel_vis_x = jnp.zeros_like(u).at[:, 3:-2, :].set(
         4.9 / celerity_x[:, 3:-2, :] * (he[:, 2:-3, :] - hw[:, 3:-2, :]))
     vel_vis_y = jnp.zeros_like(v).at[:, :, 3:-2].set(
@@ -44,7 +44,7 @@ def get_vel_vis_2d(celerity_x, celerity_y, h, u, v):
            v.at[:, :, 3:-2].set(v[:, :, 3:-2] + vel_vis_y[:, :, 3:-2])
 
 def flux_calculation(h0, ub_cx, vb_cy, dzph_x, dzph_y):
-    he, hw, hn, hs = vector_interpolation(h0)
+    he, hw, hn, hs = Poly.vector(h0)
     h_upwind_x = jnp.zeros_like(ub_cx).at[:, 1:, :].set(
         jnp.where(ub_cx[:, 1:, :] > 0.0, he[:, :-1, :], hw[:, 1:, :]))
     h_upwind_y = jnp.zeros_like(vb_cy).at[:, :, 1:].set(
@@ -55,12 +55,12 @@ def fb_scheme(h0, h0_tem, beta_d):
     return (1.0 - beta_d) * h0 + beta_d * h0_tem
 
 def calculate_pgf(h0):
-    gradx, grady = agrid_grad(h0)
+    gradx, grady = AGrid.grad(h0)
     return -9.80 * gradx, -9.80 * grady
 
 def get_pgf_vis_2d(celerity_x, celerity_y, rdx, rdy, u, v, pgf_u, pgf_v):
-    ue, uw = vector_interpolation_ew(u)
-    vn, vs = vector_interpolation_ns(v)
+    ue, uw = Poly.vector_ew(u)
+    vn, vs = Poly.vector_ns(v)
     
     vel_vis_x = jnp.zeros_like(u).at[:, 3:-2, :].set(0.5 * celerity_x[:, 3:-2, :] * (ue[:, 2:-3, :] - uw[:, 3:-2, :]))
     vel_vis_y = jnp.zeros_like(v).at[:, :, 3:-2].set(0.5 * celerity_y[:, :, 3:-2] * (vn[:, :, 2:-3] - vs[:, :, 3:-2]))
@@ -74,7 +74,7 @@ def get_pgf_vis_2d(celerity_x, celerity_y, rdx, rdy, u, v, pgf_u, pgf_v):
            pgf_v.at[:, 3:-3, 3:-3].set(pgf_v[:, 3:-3, 3:-3] - vel_vis_y[:, 3:-3, 3:-3])
 
 def calculate_advection(vb_cx, ub_cy, ub_cx, vb_cy, vb_ct, ub_ct, rdx, rdy):
-    vort = agrid_vorticity(vb_cx, ub_cy)
+    vort = AGrid.vorticity(vb_cx, ub_cy)
     kin_u = 0.5 * (ub_cx**2 + vb_cx**2)
     kin_v = 0.5 * (vb_cy**2 + ub_cy**2)
     advx = jnp.zeros_like(vb_cx).at[:, :-1, :].set(
@@ -91,14 +91,14 @@ def _step_rk_logic(h0, h0p, ub, vb, ubp, vbp, consts, dt, beta_d, is_laststep):
     dzph_x, dzph_y, pax, pxb, whx, pay, pyb, why, wgp, rdx, rdy, a_f = consts
 
     celerity_x, celerity_y = get_celerity(h0, dzph_x, dzph_y)
-    ub_ct, vb_ct, ub_cx, ub_cy, vb_cx, vb_cy = vector_trans_2d(ub, vb)
+    ub_ct, vb_ct, ub_cx, ub_cy, vb_cx, vb_cy = Remap.vector_trans_2d(ub, vb)
     ub_cx, vb_cy = get_vel_vis_2d(celerity_x, celerity_y, h0, ub_cx, vb_cy)
     flux_hu, flux_hv = flux_calculation(h0, ub_cx, vb_cy, dzph_x, dzph_y)
     
     if is_laststep:
         flux_hu, flux_hv = Communication.boundary_communication(flux_hu, flux_hv)
         
-    div_out = agrid_div(flux_hu, flux_hv)
+    div_out = AGrid.div(flux_hu, flux_hv)
     new_h0 = h0p - div_out * dt
     new_h0 = Cube.ext_scalar(new_h0)
     

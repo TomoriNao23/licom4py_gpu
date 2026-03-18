@@ -5,20 +5,24 @@ Description: Main scheduling system for LICOM model execution, coordinating
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
-Updated: 2026-01-07
+Updated: 2026-03-19
 
 REVISION HISTORY:
     03/09/2025 - Initial implementation of Schedule class
-    01/07/2026 - Refactored execution strategy for performance optimization
+    07/01/2026 - Refactored execution strategy for performance optimization
+    19/03/2026 - Refactor imports to package-level paths
 """
 # Standard library imports
-from typing import Union
+from __future__ import annotations
+from typing import TYPE_CHECKING, Union
 
 # Local application imports
-from readnamelist import Namelist, Timer
-from momentum.momentum import Momentum
-from mymodule import InitialError
-from duogrid import Dg
+from licom.readnamelist import Namelist, Timer
+from licom.mymodule import InitialError
+from licom.duogrid import Dg
+
+if TYPE_CHECKING:
+    from licom.momentum import Momentum
 
 
 class Schedule:

@@ -1,31 +1,31 @@
 """
-File: velocity_transform.py
+File: w92_field.py
 Description: Velocity field transformation functions for converting between
     spherical (lat-lon) coordinates and cubed-sphere grid coordinates.
 
-Author: Chtholly <mengleshan@mail.iap.ac.cn>  
+Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-22
+Updated: 2026-03-19
+
+REVISION HISTORY:
+    22/09/2025 - Initial implementation of velocity transformation
+    19/03/2026 - Consolidate typing imports; refactor imports to package-level paths
 """
 
 # Standard library imports
-from typing import Any
-from typing import Optional
+import functools
+from typing import Any, Optional, Tuple
 
 # Third-party imports
 import jax
 import jax.numpy as jnp
-import functools
 from jax.experimental.pjit import pjit
 from jax.sharding import PartitionSpec as P
-from typing import Tuple
 
 # Local application imports
-
-from mesh.communication import Communication
-from mesh.cube import Cube
-from mesh.gpu_mesh import GPU_Mesh
-from duogrid import Dg
-from operators.remap import vector_trans_2d
+from licom.mesh import Communication, Cube, GPU_Mesh
+from licom.duogrid import Dg
+from licom.operators import Remap
 
 def spherical_to_cubed_velocity_field(ubar: float, alpha:Optional[float] = 0.0) -> Tuple[Any, Any]:
     """
@@ -108,7 +108,7 @@ def initialize_test_velocity_field(momentum = None, test_case: str = 'w92case2')
         momentum.vbp = momentum.vb
         momentum.h0p = momentum.h0
 
-        ub_ct, vb_ct, ub_cx, ub_cy, vb_cx, vb_cy = vector_trans_2d(ub, vb)
+        ub_ct, vb_ct, ub_cx, ub_cy, vb_cx, vb_cy = Remap.vector_trans_2d(ub, vb)
         print(ub[0,2,3],vb[0,2,3],ub_ct[0,2,3],vb_ct[0,2,3],ub_cx[0,2,3],ub_cy[0,2,3],vb_cx[0,2,3],vb_cy[0,2,3])
         # 手动重算 ub_ct[0,2,3]：(a_gct[0,0]*ub + a_gct[0,1]*vb) * a_sina
 

@@ -18,7 +18,7 @@
 # module load compiler/cmake/3.20.1 
 
 # # cmake -DCMAKE_C_COMPILER=icc -DCMAKE_Fortran_COMPILER=ifort  ..
-
+# module load conda/base
 # conda activate jax_chtholly
 
 

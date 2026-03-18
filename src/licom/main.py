@@ -8,17 +8,17 @@ Created: 2025-09-03
 Updated: 2026-03-19
 
 REVISION HISTORY:
-    03/09/2025 - Initial implementation of main program
+    03/09/2026 - Initial implementation of main program
     04/01/2026 - Added timer
-    19/03/2026 - update timer
+    19/03/2026 - Update timer; refactor imports to package-level paths
 """
 import time
 import contextlib
 import jax
 
 # Local application imports
-from initial.initial_all import Initial
-from mymodule import Schedule
+from licom.initial import Initial
+from licom.mymodule import Schedule
 
 @contextlib.contextmanager
 def jax_timer(name: str):

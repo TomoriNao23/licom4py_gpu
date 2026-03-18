@@ -5,21 +5,22 @@ Description: Main initialization class for LICOM model.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
-Updated: 2026-03-15
+Updated: 2026-03-19
 
 REVISION HISTORY:
     03/09/2025 - Initial implementation of Initial class
     04/01/2026 - Added timer to initialization steps
     15/03/2026 - Removed FMS_chtholly, use NPZ + GPU_Mesh + Global2Local
+    19/03/2026 - Refactor imports to package-level paths
 """
 
 # Local application imports
-from mymodule import Schedule
-from readnamelist import Namelist
-from mesh.g2l import Global2Local
-from duogrid import Dg
-from mesh.gpu_mesh import GPU_Mesh
-from momentum.momentum import Momentum
+from licom.mymodule import Schedule
+from licom.readnamelist import Namelist
+from licom.mesh import Global2Local
+from licom.duogrid import Dg
+from licom.mesh import GPU_Mesh
+from licom.momentum import Momentum
 
 # Third-party imports
 import jax.numpy as jnp

@@ -6,7 +6,12 @@ Description: Duogrid data structure for grid management.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2026-03-15
-Updated: 2026-03-16
+Updated: 2026-03-19
+
+REVISION HISTORY:
+    15/03/2026 - Initial implementation with Global2Local-based sharding
+    16/03/2026 - Refine field distribution logic
+    19/03/2026 - Refactor imports to package-level paths
 """
 
 # Standard library imports
@@ -17,7 +22,7 @@ import numpy as np
 import jax.numpy as jnp
 
 # Local application imports
-from mesh.g2l import Global2Local
+from licom.mesh import Global2Local
 from jax.experimental.pjit import pjit
 
 
@@ -56,7 +61,7 @@ class Duogrid:
         # 这些函数内部会调用 Global2Local.zeros/array 并保持 sharding
         cls._init_calculations()
         
-        from mesh.cube import Cube
+        from licom.mesh import Cube
         Cube.configure(cls.k2e_coef, cls.k2e_loc_i, cls.k2e_loc_j, cls.a_c2l, cls.a_l2c, cls.inner, cls.outer)
 
         print("Duogrid initialized successfully.")
@@ -104,7 +109,7 @@ class Duogrid:
         # Global2Local.zeros 会根据 '2d' 模板创建 (6, nx_h, ny_h) 的正确 sharding 场
         inner = Global2Local.zeros('2d')
 
-        from mesh.gpu_mesh import GPU_Mesh
+        from licom.mesh import GPU_Mesh
         with GPU_Mesh.mesh:
             ones_full = jnp.ones_like(inner)
             
@@ -128,7 +133,7 @@ class Duogrid:
         kmt_init = Global2Local.zeros('2d')
         vit_init = Global2Local.zeros('3d') 
 
-        from mesh.gpu_mesh import GPU_Mesh
+        from licom.mesh import GPU_Mesh
         with GPU_Mesh.mesh:
             spec_2d = Global2Local.get_spec(dzph_init.shape)
             spec_3d = Global2Local.get_spec(vit_init.shape)
