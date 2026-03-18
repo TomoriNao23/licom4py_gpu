@@ -5,39 +5,40 @@ Description: Main entry point for the LICOM Ocean Model. Initializes the model
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
-Updated: 2026-01-04
+Updated: 2026-03-19
 
 REVISION HISTORY:
     03/09/2025 - Initial implementation of main program
     04/01/2026 - Added timer
+    19/03/2026 - update timer
 """
-# Standard library imports
-import sys
-import os
-import argparse
-import io
-import traceback
-from contextlib import redirect_stdout, redirect_stderr
+import time
+import contextlib
+import jax
 
 # Local application imports
 from initial.initial_all import Initial
-from mymodule import Schedule, print_all_time
+from mymodule import Schedule
 
-def main(debug_mode=False):
+@contextlib.contextmanager
+def jax_timer(name: str):
+    """Context manager to time a block of code with JAX synchronization."""
+    t_start = time.perf_counter()
+    yield
+    jax.block_until_ready(jax.numpy.array(0))
+    t_end = time.perf_counter()
+    print(f"{name} time: {t_end - t_start:.4f} s")
+
+def main():
     """LICOM main program entry"""
-    # Initialize LICOM only once to avoid FMS variable reallocation
-    licom = None
 
-    # Always initialize LICOM first
-    licom = Initial()
-    Schedule.run(licom.momentum)
-    print_all_time()
+    with jax_timer("Initial"):
+        licom = Initial()
+
+    with jax_timer("Schedule.run"):
+        Schedule.run(licom.momentum)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="LICOM Ocean Model")
-    parser.add_argument("--debug", action="store_true", help="Run in debug mode")
-    args = parser.parse_args()
-    
-    main(debug_mode=args.debug)
+    main()
 
 

@@ -17,7 +17,6 @@ from typing import Union
 # Local application imports
 from readnamelist import Namelist, Timer
 from momentum.momentum import Momentum
-from mymodule.timer import timed
 from mymodule import InitialError
 from duogrid import Dg
 
@@ -109,7 +108,6 @@ class Schedule:
             raise InitialError("Execution strategy not implemented for the given routine combination.")
 
     @classmethod
-    @timed(name="simulation", enabled=True)
     def run(cls, momentum: Momentum) -> None:
         """
         Total number of baroclinic steps (outer loop)

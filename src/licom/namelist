@@ -5,11 +5,6 @@ tracer_interval = 1
 rk_barotr = 2
 case = w92case2
 
-[backend]
-platform = cpu
-lib = jax
-precision = double
-
 [time_params]
 start_year = 2000
 start_month = 1
