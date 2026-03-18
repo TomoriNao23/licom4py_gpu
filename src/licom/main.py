@@ -5,74 +5,44 @@ Description: Main entry point for the LICOM Ocean Model. Initializes the model
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
-Updated: 2026-01-04
+Updated: 2026-03-19
 
 REVISION HISTORY:
-    03/09/2025 - Initial implementation of main program
+    03/09/2026 - Initial implementation of main program
     04/01/2026 - Added timer
+    19/03/2026 - Update timer; refactor imports to package-level paths
 """
-# Standard library imports
-import sys
-import os
-import argparse
-import io
-import traceback
-from contextlib import redirect_stdout, redirect_stderr
+import time
+import contextlib
+import jax
 
 # Local application imports
-from initial.initial_all import Initial
-from mymodule import Schedule, print_all_time
+from licom.initial import Initial
+from licom.mymodule import Schedule
 
-def main(debug_mode=False):
+@contextlib.contextmanager
+def jax_timer(name: str):
+    """Context manager to time a block of code with JAX synchronization."""
+    t_start = time.perf_counter()
+    yield
+    jax.block_until_ready(jax.numpy.array(0))
+    t_end = time.perf_counter()
+    print(f"{name} time: {t_end - t_start:.4f} s")
+
+def main():
     """LICOM main program entry"""
-    # Initialize LICOM only once to avoid FMS variable reallocation
-    licom = None
 
-    try:
-        # Always initialize LICOM first
+    with jax_timer("Initial"):
         licom = Initial()
-        if not debug_mode:
-            # Normal mode: run LICOM simulation
-            Schedule.run(licom.momentum)
-            print_all_time()
-            pass
-        else:
-            # Debug mode: run debug functionality with existing initialization
-            print("Running in debug mode...")
-            try:
-                from mymodule.debug import Debug
 
-                # Redirect output to logs/debug.output
-                debug_output_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'logs', 'debug.output')
-                os.makedirs(os.path.dirname(debug_output_path), exist_ok=True)
+    devices = jax.devices()
+    print(f"Devices ({len(devices)}): {devices[0].platform.upper()} "
+          f"[{', '.join(str(d) for d in devices)}]")
 
-                # Capture debug output and save to file
-                output_buffer = io.StringIO()
-                with redirect_stdout(output_buffer), redirect_stderr(output_buffer):
-                    debug_instance = Debug(licom.namelist)
-
-                # Save debug output to file
-                with open(debug_output_path, 'w', encoding='utf-8') as f:
-                    f.write(output_buffer.getvalue())
-
-                print(f"Debug output saved to: {debug_output_path}")
-                print("Debug mode completed.")
-
-            except Exception as debug_error:
-                print(f"Debug mode failed: {debug_error}")
-                import traceback
-                traceback.print_exc()
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    with jax_timer("Schedule.run"):
+        Schedule.run(licom.momentum)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="LICOM Ocean Model")
-    parser.add_argument("--debug", action="store_true", help="Run in debug mode")
-    args = parser.parse_args()
-    
-    main(debug_mode=args.debug)
+    main()
 
 
