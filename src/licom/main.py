@@ -35,6 +35,10 @@ def main():
     with jax_timer("Initial"):
         licom = Initial()
 
+    devices = jax.devices()
+    print(f"Devices ({len(devices)}): {devices[0].platform.upper()} "
+          f"[{', '.join(str(d) for d in devices)}]")
+
     with jax_timer("Schedule.run"):
         Schedule.run(licom.momentum)
 

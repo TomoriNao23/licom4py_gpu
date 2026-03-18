@@ -1,87 +1,89 @@
-# LICOM Makefile - Main entry for LICOM ocean model (JAX-native version)
+# LICOM Makefile - JAX-native ocean model
+# Author  : Chtholly <mengleshan@mail.iap.ac.cn>
+# Updated : 2026-03-19
+AUTHOR  := Chtholly <mengleshan@mail.iap.ac.cn>
+UPDATED := 2026-03-19
 
-# Cache settings
+# ============================================================
+# Directories & paths
+# ============================================================
 CACHE_DIR := .cache
-PYTHONPYCACHEPREFIX := $(PWD)/$(CACHE_DIR)
-export JAX_ENABLE_X64=1
+SRC_LICOM := src/licom/main.py
+SRC_FIELD := src/initial_field/main.py
+NAMELIST  := scripts/namelist
+SCRIPTS   := scripts
 
+# ============================================================
+# Read namelist once (NX PX PY PDEV NP)
+# ============================================================
+_NL       := $(shell python $(SCRIPTS)/read_namelist.py $(NAMELIST))
+_NX       := $(word 1,$(_NL))
+_PX       := $(word 2,$(_NL))
+_PY       := $(word 3,$(_NL))
+_PDEV     := $(word 4,$(_NL))
+_NP       := $(word 5,$(_NL))
+FIELD_FILE := field/duogrid_C$(_NX).npz
+
+# ============================================================
+# JAX / Python environment
+# ============================================================
+export JAX_ENABLE_X64            = 1
+export PYTHONPYCACHEPREFIX       = $(PWD)/$(CACHE_DIR)
+export XLA_PYTHON_CLIENT_ALLOCATOR = platform
+
+# Backend: CPU simulation (default) or GPU native (GPU=1)
+ifdef GPU
+  BACKEND_FLAGS :=
+  BACKEND_LABEL := GPU (native)
+else
+  BACKEND_FLAGS := XLA_FLAGS=--xla_force_host_platform_device_count=$(_NP)
+  BACKEND_LABEL := CPU (simulating $(_NP) devices)
+endif
+
+# ============================================================
 # Targets
-.PHONY: all run field clean help status install version
+# ============================================================
+.PHONY: all run field _mkdirs _check_field install clean status help version
 
 all: run
 
-# Native JAX run (Single process, multi-device via JAX mesh)
-run:
-	@mkdir -p $(CACHE_DIR) logs
-	@bash -c '\
-		echo "=========================================="; \
-		echo "Start LICOMpy (JAX-native)..."; \
-		echo "=========================================="; \
-		export PYTHONPYCACHEPREFIX=$(PYTHONPYCACHEPREFIX); \
-		export XLA_PYTHON_CLIENT_ALLOCATOR=platform; \
-		export XLA_FLAGS=--xla_force_host_platform_device_count=6; \
-		NX=$$(python -c "import configparser; \
-		c=configparser.ConfigParser(); \
-		c.read(\"src/licom/namelist\"); \
-		print(int(c[\"grid\"][\"nx\"]))"); \
-		FIELD=field/duogrid_C$${NX}.npz; \
-		if [ ! -f "$$FIELD" ]; then \
-			echo "[run] Field file $$FIELD not found, generating..."; \
-			$(MAKE) field || { echo "[run] ERROR: make field failed"; exit 1; }; \
-		fi; \
-		PYTHONPATH=src python src/licom/main.py 2>logs/error.log | tee logs/console.log; \
-		echo "=========================================="; \
-		echo "finished"; \
-		echo "=========================================="; \
-	'
+# ── run ─────────────────────────────────────────────────────
+run: _mkdirs _check_field
+	@echo "=========================================="
+	@echo "  Start LICOMpy  [$(BACKEND_LABEL)]"
+	@echo "=========================================="
+	@$(BACKEND_FLAGS) PYTHONPATH=src python $(SRC_LICOM) \
+	    2>logs/error.log | tee logs/console.log
+	@echo "=========================================="
+	@echo "  finished"
+	@echo "=========================================="
 
-# Generate initial field (duogrid_C{nx}.npz) using MPI (legacy generator)
-field:
+_check_field:
+	@if [ ! -f "$(FIELD_FILE)" ]; then \
+	    echo "[run] $(FIELD_FILE) not found, running make field ..."; \
+	    $(MAKE) field || { echo "[run] ERROR: make field failed"; exit 1; }; \
+	fi
+
+_mkdirs:
 	@mkdir -p $(CACHE_DIR) logs field
-	@bash -c '\
-		echo "=========================================="; \
-		echo "Generating initial field..."; \
-		echo "=========================================="; \
-		NX=$$(python -c "import configparser; \
-		c=configparser.ConfigParser(); \
-		c.read(\"src/licom/namelist\"); \
-		print(int(c[\"grid\"][\"nx\"]))"); \
-		PX=$$(python -c "import configparser; \
-		c=configparser.ConfigParser(); \
-		c.read(\"src/licom/namelist\"); \
-		print(int(c[\"gpu_mesh\"][\"px\"]))"); \
-		PY=$$(python -c "import configparser; \
-		c=configparser.ConfigParser(); \
-		c.read(\"src/licom/namelist\"); \
-		print(int(c[\"gpu_mesh\"][\"py\"]))"); \
-		NP=$$((PX * PY * 6)); \
-		echo "Resolution: C$${NX}, PX: $${PX}, PY: $${PY}, Total PEs: $${NP}"; \
-		cd field && \
-		export PYTHONPYCACHEPREFIX=$(PYTHONPYCACHEPREFIX); \
-		export XLA_PYTHON_CLIENT_ALLOCATOR=platform; \
-		export JAX_ENABLE_X64=1; \
-		PYTHONPATH=../src/initial_field \
-		mpirun -n $${NP} python ../src/initial_field/main.py --nx $${NX} --px $${PX} --py $${PY} \
-		2>../logs/field_error.log | cat; \
-		echo "=========================================="; \
-		echo "Field generation finished"; \
-		echo "=========================================="; \
-	'
 
-# Show system and module status
-status:
+# ── field ────────────────────────────────────────────────────
+field: _mkdirs
 	@echo "=========================================="
-	@echo "LICOM System Status Check (JAX-native)"
+	@echo "  Generating field  C$(_NX)  PX=$(_PX) PY=$(_PY)  NP=$(_NP)"
 	@echo "=========================================="
-	@echo "Python version: $$(python --version)"
-	@echo "JAX Devices: $$(python -c "import jax; print(jax.devices())")"
+	@cd field && \
+	    mpirun -n $(_NP) python ../$(SRC_FIELD) \
+	        --nx $(_NX) --px $(_PX) --py $(_PY) \
+	        2>../logs/field_error.log | cat
+	@echo "=========================================="
+	@echo "  Field generation finished"
 	@echo "=========================================="
 
-# Install dependencies
+# ── utilities ────────────────────────────────────────────────
 install:
 	@pip install -e src/licom/
 
-# Clean cache and temp files
 clean:
 	@rm -rf $(CACHE_DIR)
 	@find . -name "*.pyc" -delete
@@ -89,10 +91,27 @@ clean:
 	@rm -rf logs/*
 	@echo "Cleanup complete"
 
-# Help info
-help:
-	@echo "Targets: run, field, status, install, clean, help"
+status:
+	@echo "Author  : $(AUTHOR)"
+	@echo "Updated : $(UPDATED)"
+	@echo "Python  : $$(python --version)"
+	@echo "JAX     : $$(python -c 'import jax; print(jax.__version__)')"
+	@echo "Devices : $$(python -c 'import jax; print(jax.devices())')"
+	@echo "Grid    : C$(_NX)  PX=$(_PX) PY=$(_PY) PDEV=$(_PDEV) NP=$(_NP)"
+	@echo "Backend : $(BACKEND_LABEL)"
 
-# Version info
+help:
+	@echo "Usage: make [target] [GPU=1]"
+	@echo ""
+	@echo "Targets:"
+	@echo "  run   [GPU=1]  Run simulation  (CPU simulation default, GPU=1 for native)"
+	@echo "  field          Generate initial field file"
+	@echo "  install        pip install -e src/licom/"
+	@echo "  clean          Remove cache, pyc, logs"
+	@echo "  status         Show Python/JAX/device info"
+	@echo "  version        Print version"
+
 version:
-	@echo "LICOM: 0.2.0 (JAX-native)"
+	@echo "LICOM 0.2.0 (JAX-native)"
+	@echo "Author  : $(AUTHOR)"
+	@echo "Updated : $(UPDATED)"

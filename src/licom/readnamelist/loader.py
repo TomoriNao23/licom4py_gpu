@@ -81,19 +81,20 @@ class LoaderMixin:
 
     @classmethod
     def _load_from_package_file(
-        cls: Type, 
-        filename: str = "namelist", 
+        cls: Type,
+        filename: str = "namelist",
         anchor_file: Optional[Path] = None
         ) -> Any:
         """
-        Instantiate dataclass 'cls' from a package-shipped file.
-        If 'anchor_file' is provided, compute path relative to it; otherwise use this file's location.
+        Instantiate dataclass 'cls' from the project-level scripts/ directory.
+        Walks up 4 levels from loader.py (readnamelist/ → licom/ → src/ → project root)
+        then resolves <root>/scripts/<filename>.
         """
         base = anchor_file.resolve() if anchor_file is not None else Path(__file__).resolve()
-        pkg_dir = base
-        for _ in range(2):
-            pkg_dir = pkg_dir.parent
-        full_path = pkg_dir / filename
+        project_root = base
+        for _ in range(4):
+            project_root = project_root.parent
+        full_path = project_root / "scripts" / filename
         return cls._load_from_file(full_path)
 
 
