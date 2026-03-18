@@ -217,6 +217,7 @@ Restart/
 # Configuration files (generated at runtime)
 *.nml
 namelist
+!scripts/namelist
 input.nml
 
 # ===========================================
