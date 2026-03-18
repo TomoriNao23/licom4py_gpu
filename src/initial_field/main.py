@@ -73,7 +73,18 @@ def gather_tiles_with_id(data, tile):
 
         return None
 
-def generate(nx: int, px: int, py: int):
+ESSENTIAL_FIELDS = {
+    # A-grid metrics & operators
+    'a_sina', 'a_f', 'rdx', 'rdy', 'rda', 'a_gct',
+    # Mapping / Transformation
+    'k2e_coef', 'k2e_loc_i', 'k2e_loc_j', 'a_c2l', 'a_l2c',
+    # Cross-grid metrics (used in A-grid vorticity/div)
+    'c_dy', 'd_dx',
+    # Initial field generation (lon/lat)
+    'a_pt',
+}
+
+def generate(nx: int, px: int, py: int, full: bool = False):
     # NOTE: Do NOT import mpi4py before chtholly_init!
     # mpi4py calls MPI_Init() at import time, which causes FMS mpp_init to
     # abort because MPI is already initialized but no localcomm was provided.
@@ -124,6 +135,14 @@ def generate(nx: int, px: int, py: int):
 
     # Save to file named by resolution: duogrid_C{nx}.npz in CWD (field/)
     if rank == 0:
+        if not full:
+            # Filter only essential fields
+            filtered_data = {k: v for k, v in all_data.items() if k in ESSENTIAL_FIELDS}
+            missing = ESSENTIAL_FIELDS - set(all_data.keys())
+            if missing:
+                print(f"Warning: Expected essential fields not found: {missing}")
+            all_data = filtered_data
+
         print("Gathered arrays dimension summary:")
         for name, arr in all_data.items():
             print(f"  {name:15}: {arr.shape}")
@@ -145,5 +164,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--px", type=int, default=1)
     parser.add_argument("--py", type=int, default=1)
+    parser.add_argument("--full", action="store_true", help="Export all fields instead of just essential ones")
     args = parser.parse_args()
-    generate(nx=args.nx, px=args.px, py=args.py)
+    generate(nx=args.nx, px=args.px, py=args.py, full=args.full)

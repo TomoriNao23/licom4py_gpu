@@ -23,7 +23,7 @@ from .validators import validate_namelist_class
 class Namelist(TimeConfig, LoaderMixin):
     """Main namelist configuration class inheriting time configuration."""
 
-    namelist_local = ["run_params", "backend", "time_params", "grid", "gpu_mesh", "diagnostics"]
+    namelist_local = ["run_params", "time_params", "grid", "gpu_mesh", "diagnostics"]
 
     # run_params section
     barotropic_dt: int = field(default=150, metadata={"section": namelist_local[0]})
@@ -32,21 +32,16 @@ class Namelist(TimeConfig, LoaderMixin):
     rk_barotr: int = field(default=2, metadata={"section": namelist_local[0]})
     case: str = field(default='w92case2', metadata={"section": namelist_local[0]})
 
-    # backend section
-    lib: str = field(default='jax', metadata={"section": namelist_local[1]})
-    platform: str = field(default='cpu', metadata={"section": namelist_local[1]})
-    precision: str = field(default='double', metadata={"section": namelist_local[1]})
-
     # grid section
-    nx: int = field(default=96, metadata={"section": namelist_local[3]})
-    ny: int = field(default=96, metadata={"section": namelist_local[3]})
-    npz: int = field(default=1, metadata={"section": namelist_local[3]})
-    halo: int = field(default=1, metadata={"section": namelist_local[3]})
+    nx: int = field(default=96, metadata={"section": namelist_local[2]})
+    ny: int = field(default=96, metadata={"section": namelist_local[2]})
+    npz: int = field(default=1, metadata={"section": namelist_local[2]})
+    halo: int = field(default=1, metadata={"section": namelist_local[2]})
 
     # mesh section
-    pdev: int = field(default=1, metadata={"section": namelist_local[4]})
-    px: int = field(default=1, metadata={"section": namelist_local[4]})
-    py: int = field(default=1, metadata={"section": namelist_local[4]})
+    pdev: int = field(default=1, metadata={"section": namelist_local[3]})
+    px: int = field(default=1, metadata={"section": namelist_local[3]})
+    py: int = field(default=1, metadata={"section": namelist_local[3]})
 
     # computed once after init
     _io_layout: Tuple[int, int] = field(init=False, repr=False)
@@ -54,5 +49,4 @@ class Namelist(TimeConfig, LoaderMixin):
     _total_barotropic_steps: int = field(init=False, repr=True)
 
     # diagnostics
-    diag_freq: Optional[int] = field(default=None, metadata={"section": namelist_local[5]})
-    timer: Optional[bool] = field(default=False, metadata={"section": namelist_local[5]})
+    diag_freq: Optional[int] = field(default=None, metadata={"section": namelist_local[4]})

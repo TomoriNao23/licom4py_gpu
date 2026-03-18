@@ -25,4 +25,3 @@ py = 1
 
 [diagnostics]
  diag_freq = 24
- timer = True

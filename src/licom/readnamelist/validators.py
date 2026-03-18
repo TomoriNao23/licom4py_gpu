@@ -94,12 +94,6 @@ def validate_namelist_class(cls):
         self._require(self.barotropic_dt <= self.baroclinic_dt,
                 "Barotropic time step must be less than baroclinic time step")
 
-        # backend validations
-        self._require(self.platform in ["cpu", "gpu", "metal", "rocm"], "Platform must be 'cpu' or 'gpu' or 'metal' or 'rocm'")
-        self._require(self.lib in ["numpy", "jax"], "Library must be 'numpy' or 'jax'")
-        self._require(self.precision in ["single", "double"], "Precision must be 'single' or 'double'")
-        self._require(self.platform == "cpu", "CPU backend must use numpy") if self.lib == "numpy" else True
-
         # grid validations
         self._require(self.nx > 0 and self.ny > 0, "nx, ny must be positive")
         self._require(self.halo >= 0, "halo must be non-negative")
