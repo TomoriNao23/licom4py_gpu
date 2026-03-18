@@ -213,7 +213,6 @@ def add_barotropic_methods(cls):
 
     def barotr_rk2(self):
         state, consts = self._pack()
-        # 始终在 mesh 上使用 pjit；pdev=1,2,3,6 都允许，只是划分/复用模式不同
         with GPU_Mesh.mesh:
             self._unpack(_barotr_rk2_pjit(state, consts, self.nbb, self.dtb))
 

@@ -28,45 +28,10 @@ def main(debug_mode=False):
     # Initialize LICOM only once to avoid FMS variable reallocation
     licom = None
 
-    try:
-        # Always initialize LICOM first
-        licom = Initial()
-        if not debug_mode:
-            # Normal mode: run LICOM simulation
-            Schedule.run(licom.momentum)
-            print_all_time()
-            pass
-        else:
-            # Debug mode: run debug functionality with existing initialization
-            print("Running in debug mode...")
-            try:
-                from mymodule.debug import Debug
-
-                # Redirect output to logs/debug.output
-                debug_output_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'logs', 'debug.output')
-                os.makedirs(os.path.dirname(debug_output_path), exist_ok=True)
-
-                # Capture debug output and save to file
-                output_buffer = io.StringIO()
-                with redirect_stdout(output_buffer), redirect_stderr(output_buffer):
-                    debug_instance = Debug(licom.namelist)
-
-                # Save debug output to file
-                with open(debug_output_path, 'w', encoding='utf-8') as f:
-                    f.write(output_buffer.getvalue())
-
-                print(f"Debug output saved to: {debug_output_path}")
-                print("Debug mode completed.")
-
-            except Exception as debug_error:
-                print(f"Debug mode failed: {debug_error}")
-                import traceback
-                traceback.print_exc()
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    # Always initialize LICOM first
+    licom = Initial()
+    Schedule.run(licom.momentum)
+    print_all_time()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LICOM Ocean Model")
