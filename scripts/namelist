@@ -9,7 +9,7 @@ case = w92case2
 start_year = 2000
 start_month = 1
 start_day = 1
-integration_days = 30
+integration_days = 10
 #integration_hours = 2
 #integration_months = 1
 
@@ -19,7 +19,7 @@ ny = 96
 npz = 30
 
 [gpu_mesh]
-pdev = 6
+pdev = 2
 px = 1
 py = 1
 

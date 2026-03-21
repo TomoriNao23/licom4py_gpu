@@ -85,66 +85,6 @@ class Topology:
 
 
 # ==========================================
-# 2. GreedyColoring Class
-# ==========================================
-class GreedyColoring:
-    """
-    Scheduler handling communication dependencies and conflicts using graph coloring.
-    """
-    
-    @staticmethod
-    def color_edges(edges, ntile):
-        """
-        Allocates edges to conflict-free rounds so that no tile communicates
-        simultaneously in multiple directions.
-        """
-        n = len(edges)
-        conflicts = [[False] * n for _ in range(n)]
-
-        # Determine conflicts: edges conflict if they share a tile
-        for i, (a, _, b, _, _) in enumerate(edges):
-            for j, (c, _, d, _, _) in enumerate(edges):
-                if i != j and {a, b} & {c, d}:
-                    conflicts[i][j] = True
-
-        colors = [-1] * n
-        for i in range(n):
-            used_colors = {colors[j] for j in range(n) if conflicts[i][j] and colors[j] >= 0}
-            c = 0
-            while c in used_colors:
-                c += 1
-            colors[i] = c
-
-        rounds = []
-        for c in range(max(colors) + 1):
-            group = [edges[i] for i in range(n) if colors[i] == c]
-            swapped = {t for edge in group for t in (edge[0], edge[2])}
-
-            # Create permutation map for jax.lax.ppermute
-            perm = [(a, b) for a, _, b, _, _ in group] + [(b, a) for a, _, b, _, _ in group]
-            
-            # Tiles not participating in the exchange point to themselves
-            perm.extend([(t, t) for t in range(ntile) if t not in swapped])
-            rounds.append((group, perm))
-
-        return rounds
-
-    @staticmethod
-    def build_schedule(rounds, ntile):
-        """
-        Generates and formats a detailed send/receive schedule for each tile in each round.
-        """
-        schedule = []
-        for group, _ in rounds:
-            round_sched = [None] * ntile
-            for tA, dA, tB, dB, tid in group:
-                round_sched[tA] = (dA, tB, tid)
-                round_sched[tB] = (dB, tA, tid)
-            schedule.append(round_sched)
-        return schedule
-
-
-# ==========================================
 # 3. Communication Class
 # ==========================================
 class Communication:
@@ -164,8 +104,7 @@ class Communication:
     _n_pad = 0
     mesh = None
 
-    _rounds = None
-    _schedule = None
+    _routing = None
 
     _update_domain_jit = None
     _boundary_communication_jit = None
@@ -179,8 +118,13 @@ class Communication:
         cls._n_pad = max(nx_local, ny_local)
 
         edges = Topology.generate_edges()
-        cls._rounds = GreedyColoring.color_edges(edges, Topology.NTILE)
-        cls._schedule = GreedyColoring.build_schedule(cls._rounds, Topology.NTILE)
+        
+        # Build static routing map for single-round communication
+        routing_list = [[[0, 0, 0] for _ in range(4)] for _ in range(Topology.NTILE)]
+        for tA, dA, tB, dB, tid in edges:
+            routing_list[tA][dA] = [tB, dB, tid]
+            routing_list[tB][dB] = [tA, dA, tid]
+        cls._routing = jnp.array(routing_list, dtype=jnp.int32)
 
         # Vectorize over the 'tile' axis and use pjit to preserve sharding
         # in_shardings and out_shardings enforce P('tile', 'x', 'y') logic
@@ -208,13 +152,12 @@ class Communication:
         n = cls.ny_local if is_ew else cls.nx_local
         raw = data[:, :n]
 
-        t = raw.T[::-1, :] if tid == Topology.FLIP_I_TRANS else raw
-
-        expected_shape0 = cls.ny_local if is_ew else cls.halo
-        if t.shape[0] != expected_shape0:
-            t = t.T
-            
-        return t
+        if is_ew:
+            # Expected shape: (ny_local, halo)
+            return jnp.where(tid == Topology.FLIP_I_TRANS, raw.T[::-1, :], raw.T)
+        else:
+            # Expected shape: (halo, nx_local)
+            return jnp.where(tid == Topology.FLIP_I_TRANS, raw[:, ::-1], raw)
 
     # -------------------------------------------------
     # Domain Update (Halo Exchange)
@@ -240,51 +183,31 @@ class Communication:
         return raw
 
     @classmethod
-    def _update_domain_round(cls, u, round_idx, perm):
-        """Executes a single communication round for domain updating."""
-        tile_id = lax.axis_index("tile")
-        h, n = cls.halo, cls._n_pad
-        sched = cls._schedule[round_idx]
-
-        send = jnp.zeros((h, n), dtype=u.dtype)
-
-        for t in range(Topology.NTILE):
-            entry = sched[t]
-            if entry is None: continue
-            d, _, _ = entry
-            
-            # Conditionally pack the edge if the current tile matches
-            send = lax.cond(
-                tile_id == t,
-                lambda _: cls._pack_edge(u, d),
-                lambda _: send,
-                None
-            )
-
-        # Cross-device communication using permutations based on graph coloring
-        recv = lax.ppermute(send, "tile", perm)
-
-        for t in range(Topology.NTILE):
-            entry = sched[t]
-            if entry is None: continue
-            d, _, tid = entry
-            arr = cls._apply_transform(recv, d, tid)
-
-            def write(_):
-                if d == Topology.E:   return u.at[h:-h, -h:].set(arr)
-                elif d == Topology.W: return u.at[h:-h, :h].set(arr)
-                elif d == Topology.N: return u.at[-h:, h:-h].set(arr)
-                else:                 return u.at[:h, h:-h].set(arr)
-
-            u = lax.cond(tile_id == t, write, lambda _: u, None)
-
-        return u
-
-    @classmethod
     def _update_domain_single(cls, u):
-        """Applies all communication rounds sequentially for a single array."""
-        for r, (_, perm) in enumerate(cls._rounds):
-            u = cls._update_domain_round(u, r, perm)
+        """Applies single-round boundary exchange using all_gather."""
+        # Pack all 4 edges into an array of shape (4, halo, n)
+        send = jnp.stack([
+            cls._pack_edge(u, Topology.E),
+            cls._pack_edge(u, Topology.W),
+            cls._pack_edge(u, Topology.N),
+            cls._pack_edge(u, Topology.S),
+        ])
+        
+        # Gather all edges from all tiles. recv shape: (NTILE, 4, halo, n)
+        recv = lax.all_gather(send, "tile", tiled=False) 
+        
+        tile_id = lax.axis_index("tile")
+        
+        def process_dir(d):
+            nb, dB, tid = cls._routing[tile_id, d]
+            return cls._apply_transform(recv[nb, dB], d, tid)
+
+        h = cls.halo
+        u = u.at[h:-h, -h:].set(process_dir(Topology.E))
+        u = u.at[h:-h, :h].set(process_dir(Topology.W))
+        u = u.at[-h:, h:-h].set(process_dir(Topology.N))
+        u = u.at[:h, h:-h].set(process_dir(Topology.S))
+        
         return u
 
     @classmethod
@@ -319,59 +242,41 @@ class Communication:
         return raw
 
     @classmethod
-    def _boundary_communication_round(cls, u, v, round_idx, perm):
-        """Executes a single boundary synchronization round."""
-        tile_id = lax.axis_index("tile")
-        h, n = cls.halo, cls._n_pad
-        sched = cls._schedule[round_idx]
-
-        send = jnp.zeros((h, n), dtype=u.dtype)
-
-        for t in range(Topology.NTILE):
-            entry = sched[t]
-            if entry is None: continue
-            d, _, _ = entry
-            
-            send = lax.cond(
-                tile_id == t,
-                lambda _: cls._pack_boundary_edge(u, v, d),
-                lambda _: send,
-                None
-            )
-
-        # Cross-device exchange
-        recv = lax.ppermute(send, "tile", perm)
-
-        for t in range(Topology.NTILE):
-            entry = sched[t]
-            if entry is None: continue
-            d, _, tid = entry
-            arr = cls._apply_transform(recv, d, tid)
-
-            def write(_):
-                # Calculate mean of the local and received edges
-                if d == Topology.E:
-                    val = ((v[h:-h, cls.IDX_E] + arr[:, 0]) / 2.0).astype(v.dtype)
-                    return u, v.at[h:-h, cls.IDX_E].set(val)
-                elif d == Topology.W:
-                    val = ((v[h:-h, cls.IDX_W] + arr[:, 0]) / 2.0).astype(v.dtype)
-                    return u, v.at[h:-h, cls.IDX_W].set(val)
-                elif d == Topology.N:
-                    val = ((u[cls.IDX_N, h:-h] + arr[0, :]) / 2.0).astype(u.dtype)
-                    return u.at[cls.IDX_N, h:-h].set(val), v
-                else:
-                    val = ((u[cls.IDX_S, h:-h] + arr[0, :]) / 2.0).astype(u.dtype)
-                    return u.at[cls.IDX_S, h:-h].set(val), v
-
-            u, v = lax.cond(tile_id == t, write, lambda _: (u, v), None)
-
-        return u, v
-
-    @classmethod
     def _boundary_communication_single(cls, u, v):
-        """Applies all boundary sync rounds sequentially."""
-        for r, (_, perm) in enumerate(cls._rounds):
-            u, v = cls._boundary_communication_round(u, v, r, perm)
+        """Applies single-round boundary synchronization for vector fields."""
+        send = jnp.stack([
+            cls._pack_boundary_edge(u, v, Topology.E),
+            cls._pack_boundary_edge(u, v, Topology.W),
+            cls._pack_boundary_edge(u, v, Topology.N),
+            cls._pack_boundary_edge(u, v, Topology.S),
+        ])
+        
+        # Gather all edges from all tiles. recv shape: (NTILE, 4, halo, n)
+        recv = lax.all_gather(send, "tile", tiled=False)
+        tile_id = lax.axis_index("tile")
+        
+        def process_dir(d):
+            nb, dB, tid = cls._routing[tile_id, d]
+            return cls._apply_transform(recv[nb, dB], d, tid)
+
+        h = cls.halo
+        
+        arr_E = process_dir(Topology.E)
+        val_E = ((v[h:-h, cls.IDX_E] + arr_E[:, 0]) / 2.0).astype(v.dtype)
+        v = v.at[h:-h, cls.IDX_E].set(val_E)
+        
+        arr_W = process_dir(Topology.W)
+        val_W = ((v[h:-h, cls.IDX_W] + arr_W[:, 0]) / 2.0).astype(v.dtype)
+        v = v.at[h:-h, cls.IDX_W].set(val_W)
+        
+        arr_N = process_dir(Topology.N)
+        val_N = ((u[cls.IDX_N, h:-h] + arr_N[0, :]) / 2.0).astype(u.dtype)
+        u = u.at[cls.IDX_N, h:-h].set(val_N)
+        
+        arr_S = process_dir(Topology.S)
+        val_S = ((u[cls.IDX_S, h:-h] + arr_S[0, :]) / 2.0).astype(u.dtype)
+        u = u.at[cls.IDX_S, h:-h].set(val_S)
+        
         return u, v
 
     @classmethod
@@ -385,15 +290,16 @@ class Communication:
     # -------------------------------------------------
     @classmethod
     def print_schedule_info(cls):
-        """Prints the calculated topology schedules and rounds."""
-        if cls._rounds is None:
+        """Prints the calculated topology routing."""
+        if cls._routing is None:
             print("Error: Communication is not yet configured. Please call configure() first.")
             return
 
-        print(f"Number of communication rounds: {len(cls._rounds)}")
+        print("Communication routing (Single Round All-Gather):")
         dn = {Topology.E: 'E', Topology.W: 'W', Topology.N: 'N', Topology.S: 'S'}
-        
-        for i, (edges, _) in enumerate(cls._rounds):
-            # Display: (Tile_A, Dir_A, Tile_B, Dir_B) with 1-based indexing for readability
-            round_info = [(e[0] + 1, dn[e[1]], e[2] + 1, dn[e[3]]) for e in edges]
-            print(f"  Round {i}: {round_info}")
+        for t in range(Topology.NTILE):
+            routes = []
+            for d in (Topology.E, Topology.W, Topology.N, Topology.S):
+                nb, dB, _ = cls._routing[t, d]
+                routes.append(f"{dn[d]}<-T{nb+1}:{dn[int(dB)]}")
+            print(f"  Tile {t+1}: " + ", ".join(routes))
