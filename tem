@@ -13,8 +13,6 @@ REVISION HISTORY:
 import jax
 import jax.numpy as jnp
 from jax import lax
-from jax.experimental.pjit import pjit
-from jax.sharding import PartitionSpec as P
 
 # ==========================================
 # 1. Topology Class
@@ -106,8 +104,8 @@ class Communication:
 
     _routing = None
 
-    _update_domain_jit = None
-    _boundary_communication_jit = None
+    _update_domain_vmap = None
+    _boundary_communication_vmap = None
 
     @classmethod
     def configure(cls, halo, nx_local, ny_local, mesh):
@@ -126,19 +124,9 @@ class Communication:
             routing_list[tB][dB] = [tA, dA, tid]
         cls._routing = jnp.array(routing_list, dtype=jnp.int32)
 
-        # Vectorize over the 'tile' axis and use pjit to preserve sharding
-        # in_shardings and out_shardings enforce P('tile', 'x', 'y') logic
-        cls._update_domain_jit = pjit(
-            jax.vmap(cls._update_domain_single, axis_name="tile"),
-            in_shardings=(P('tile', 'x', 'y'),),
-            out_shardings=P('tile', 'x', 'y')
-        )
-        
-        cls._boundary_communication_jit = pjit(
-            jax.vmap(cls._boundary_communication_single, axis_name="tile"),
-            in_shardings=(P('tile', 'x', 'y'), P('tile', 'x', 'y')),
-            out_shardings=(P('tile', 'x', 'y'), P('tile', 'x', 'y'))
-        )
+        # Vectorize over the 'tile' axis to rely on outer pjit for physical distribution
+        cls._update_domain_vmap = jax.vmap(cls._update_domain_single, axis_name="tile")
+        cls._boundary_communication_vmap = jax.vmap(cls._boundary_communication_single, axis_name="tile")
 
     # -------------------------------------------------
     # Shared Logic
@@ -154,20 +142,10 @@ class Communication:
 
         if is_ew:
             # Expected shape: (ny_local, halo)
-            return lax.cond(
-                tid == Topology.FLIP_I_TRANS,
-                lambda x: x.T[::-1, :],
-                lambda x: x.T,
-                raw
-            )
+            return jnp.where(tid == Topology.FLIP_I_TRANS, raw.T[::-1, :], raw.T)
         else:
             # Expected shape: (halo, nx_local)
-            return lax.cond(
-                tid == Topology.FLIP_I_TRANS,
-                lambda x: x[:, ::-1],
-                lambda x: x,
-                raw
-            )
+            return jnp.where(tid == Topology.FLIP_I_TRANS, raw[:, ::-1], raw)
 
     # -------------------------------------------------
     # Domain Update (Halo Exchange)
@@ -223,8 +201,7 @@ class Communication:
     @classmethod
     def update_domain(cls, u):
         """Public API to trigger domain update within the defined Mesh."""
-        with cls.mesh:
-            return cls._update_domain_jit(u)
+        return cls._update_domain_vmap(u)
 
     # -------------------------------------------------
     # C-Grid Boundary Edge Synchronization
@@ -292,8 +269,7 @@ class Communication:
     @classmethod
     def boundary_communication(cls, u, v):
         """Public API to trigger boundary synchronization within the defined Mesh."""
-        with cls.mesh:
-            return cls._boundary_communication_jit(u, v)
+        return cls._boundary_communication_vmap(u, v)
     
     # -------------------------------------------------
     # Print Scheduling Info
