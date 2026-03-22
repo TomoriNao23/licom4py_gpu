@@ -10,5 +10,6 @@ px   = int(c["gpu_mesh"]["px"])
 py   = int(c["gpu_mesh"]["py"])
 pdev = int(c["gpu_mesh"]["pdev"])
 np   = pdev * px * py
+np_field = 6 * px * py
 
-print(f"{nx} {px} {py} {pdev} {np}")
+print(f"{nx} {px} {py} {pdev} {np} {np_field}")
