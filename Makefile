@@ -32,28 +32,30 @@ export JAX_ENABLE_X64            = 1
 export PYTHONPYCACHEPREFIX       = $(PWD)/$(CACHE_DIR)
 export XLA_PYTHON_CLIENT_ALLOCATOR = platform
 
-# Backend: CPU simulation (default) or GPU native (GPU=1)
-ifdef GPU
-  BACKEND_FLAGS :=
-  BACKEND_LABEL := GPU (native)
-else
-  BACKEND_FLAGS := XLA_FLAGS=--xla_force_host_platform_device_count=$(_NP)
-  BACKEND_LABEL := CPU (simulating $(_NP) devices)
-endif
-
 # ============================================================
 # Targets
 # ============================================================
-.PHONY: all run field _mkdirs _check_field install clean status help version
+.PHONY: all run simulation field _mkdirs _check_field install clean status help version
 
 all: run
 
 # ── run ─────────────────────────────────────────────────────
 run: _mkdirs _check_field
 	@echo "=========================================="
-	@echo "  Start LICOMpy  [$(BACKEND_LABEL)]"
+	@echo "  Start LICOMpy  [run.default]"
 	@echo "=========================================="
-	@$(BACKEND_FLAGS) PYTHONPATH=src python $(SRC_LICOM) \
+	@PYTHONPATH=src python $(SRC_LICOM) \
+	    2>logs/error.log | tee logs/console.log
+	@echo "=========================================="
+	@echo "  finished"
+	@echo "=========================================="
+
+# ── simulation ──────────────────────────────────────────────
+simulation: _mkdirs _check_field
+	@echo "=========================================="
+	@echo "  Start LICOMpy  [simulation.cpu]"
+	@echo "=========================================="
+	@XLA_FLAGS=--xla_force_host_platform_device_count=$(_NP) PYTHONPATH=src python $(SRC_LICOM) \
 	    2>logs/error.log | tee logs/console.log
 	@echo "=========================================="
 	@echo "  finished"
@@ -99,13 +101,13 @@ status:
 	@echo "JAX     : $$(python -c 'import jax; print(jax.__version__)')"
 	@echo "Devices : $$(python -c 'import jax; print(jax.devices())')"
 	@echo "Grid    : C$(_NX)  PX=$(_PX) PY=$(_PY) PDEV=$(_PDEV) NP=$(_NP)"
-	@echo "Backend : $(BACKEND_LABEL)"
 
 help:
-	@echo "Usage: make [target] [GPU=1]"
+	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@echo "  run   [GPU=1]  Run simulation  (CPU simulation default, GPU=1 for native)"
+	@echo "  run            Run LICOMpy on GPU"
+	@echo "  simulation     Run LICOMpy on CPU (simulate multiple devices)"
 	@echo "  field          Generate initial field file"
 	@echo "  install        pip install -e src/licom/"
 	@echo "  clean          Remove cache, pyc, logs"
