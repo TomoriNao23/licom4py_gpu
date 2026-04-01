@@ -19,7 +19,7 @@ from typing import Any, Optional, Tuple
 # Third-party imports
 import jax
 import jax.numpy as jnp
-from jax.experimental.pjit import pjit
+from jax import jit
 from jax.sharding import PartitionSpec as P
 
 # Local application imports
@@ -65,10 +65,8 @@ def spherical_to_cubed_velocity_field(ubar: float, alpha:Optional[float] = 0.0) 
     
     return u_cubed, v_cubed
 
-@functools.partial(pjit, 
-                   static_argnames=("test_case",),
-                   in_shardings=(P('tile', 'x', 'y'), P('tile', 'x', 'y'), P('tile', 'x', 'y')),
-                   out_shardings=(P('tile', 'x', 'y'), P('tile', 'x', 'y'), P('tile', 'x', 'y')))
+@functools.partial(jit, 
+                   static_argnames=("test_case",))
 def initialize_test_velocity_field_jit(ub_in: Any, vb_in: Any, h0_in: Any, test_case: str = 'w92case2') -> Tuple[Any, Any, Any]:
     """JIT version of velocity initialization for sharding safety."""
     if test_case == 'w92case2':

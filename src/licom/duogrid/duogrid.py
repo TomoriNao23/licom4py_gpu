@@ -23,7 +23,8 @@ import jax.numpy as jnp
 
 # Local application imports
 from licom.mesh import Global2Local
-from jax.experimental.pjit import pjit
+from jax import jit
+from jax.sharding import NamedSharding
 
 
 class Duogrid:
@@ -114,6 +115,7 @@ class Duogrid:
             ones_full = jnp.ones_like(inner)
             
             spec = Global2Local.get_spec(inner.shape)
+            sharding = NamedSharding(GPU_Mesh.mesh, spec)
             
             def _set_mask_logic(in_arr, out_arr):
                 h = cls.halo
@@ -121,8 +123,8 @@ class Duogrid:
                 out_arr = out_arr.at[:, h:-h, h:-h].set(0.0)
                 return in_arr, out_arr
 
-            _logic_pjit = pjit(_set_mask_logic, in_shardings=(spec, spec), out_shardings=(spec, spec))
-            cls.inner, cls.outer = _logic_pjit(inner, ones_full)
+            _logic_jit = jit(_set_mask_logic, in_shardings=(sharding, sharding), out_shardings=(sharding, sharding))
+            cls.inner, cls.outer = _logic_jit(inner, ones_full)
 
     @classmethod
     def _ocean_depth(cls) -> None:
@@ -137,6 +139,8 @@ class Duogrid:
         with GPU_Mesh.mesh:
             spec_2d = Global2Local.get_spec(dzph_init.shape)
             spec_3d = Global2Local.get_spec(vit_init.shape)
+            sharding_2d = NamedSharding(GPU_Mesh.mesh, spec_2d)
+            sharding_3d = NamedSharding(GPU_Mesh.mesh, spec_3d)
 
             def _init_depth_logic(dzph, kmt, vit):
                 # 将全场初始化为恒定值 (dzph=5600, kmt=30层, vit=1.0)
@@ -145,11 +149,11 @@ class Duogrid:
                 vit = vit.at[:].set(1.0)
                 return dzph, kmt, vit
 
-            _depth_pjit = pjit(_init_depth_logic, 
-                               in_shardings=(spec_2d, spec_2d, spec_3d), 
-                               out_shardings=(spec_2d, spec_2d, spec_3d))
+            _depth_jit = jit(_init_depth_logic, 
+                               in_shardings=(sharding_2d, sharding_2d, sharding_3d), 
+                               out_shardings=(sharding_2d, sharding_2d, sharding_3d))
             
-            cls.dzph, cls.kmt, cls.vit = _depth_pjit(dzph_init, kmt_init, vit_init)
+            cls.dzph, cls.kmt, cls.vit = _depth_jit(dzph_init, kmt_init, vit_init)
         # B/C/D grid 的对应场由于在 stencil 计算中可能通过插值得到，这里按需补充
         cls.dzph_x = cls.dzph
         cls.dzph_y = cls.dzph

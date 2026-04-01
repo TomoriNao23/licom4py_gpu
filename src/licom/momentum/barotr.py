@@ -1,7 +1,7 @@
 """
 File: barotr.py
 Description: High-performance barotropic time stepping methods for Momentum class.
-    Consolidated with JIT/pjit compatibility for sharded JAX execution.
+    Consolidated with JIT compatibility for sharded JAX execution.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-22
@@ -15,7 +15,7 @@ REVISION HISTORY:
 
 import jax
 import jax.numpy as jnp
-from jax.experimental.pjit import pjit
+from jax import jit
 from jax.sharding import PartitionSpec as P
 
 # Local application imports
@@ -181,16 +181,12 @@ _const_ps = (
     P('tile', 'x', 'y'),    # a_f
 )
 
-_barotr_rk2_pjit = pjit(
-    _barotr_rk2_core,
-    in_shardings=(_state_ps, _const_ps, None, None),
-    out_shardings=_state_ps,
+_barotr_rk2_jit = jit(
+    _barotr_rk2_core
 )
 
-_barotr_rk3_pjit = pjit(
-    _barotr_rk3_core,
-    in_shardings=(_state_ps, _const_ps, None, None),
-    out_shardings=_state_ps,
+_barotr_rk3_jit = jit(
+    _barotr_rk3_core
 )
 
 # =====================================================================
@@ -214,12 +210,12 @@ def add_barotropic_methods(cls):
     def barotr_rk2(self):
         state, consts = self._pack()
         with GPU_Mesh.mesh:
-            self._unpack(_barotr_rk2_pjit(state, consts, self.nbb, self.dtb))
+            self._unpack(_barotr_rk2_jit(state, consts, self.nbb, self.dtb))
 
     def barotr_rk3(self):
         state, consts = self._pack()
         with GPU_Mesh.mesh:
-            self._unpack(_barotr_rk3_pjit(state, consts, self.nbb, self.dtb))
+            self._unpack(_barotr_rk3_jit(state, consts, self.nbb, self.dtb))
 
     cls.barotr_rk2 = barotr_rk2
     cls.barotr_rk3 = barotr_rk3

@@ -13,8 +13,8 @@ REVISION HISTORY:
 import jax
 import jax.numpy as jnp
 from jax import lax
-from jax.experimental.pjit import pjit
-from jax.sharding import PartitionSpec as P
+from jax import jit
+from jax.sharding import PartitionSpec as P, NamedSharding
 
 # ==========================================
 # 1. Topology Class
@@ -126,18 +126,19 @@ class Communication:
             routing_list[tB][dB] = [tA, dA, tid]
         cls._routing = jnp.array(routing_list, dtype=jnp.int32)
 
-        # Vectorize over the 'tile' axis and use pjit to preserve sharding
-        # in_shardings and out_shardings enforce P('tile', 'x', 'y') logic
-        cls._update_domain_jit = pjit(
+        # Vectorize over the 'tile' axis and use jit to preserve sharding
+        # in_shardings and out_shardings enforce logic
+        sharding = NamedSharding(cls.mesh, P('tile', 'x', 'y'))
+        cls._update_domain_jit = jit(
             jax.vmap(cls._update_domain_single, axis_name="tile"),
-            in_shardings=(P('tile', 'x', 'y'),),
-            out_shardings=P('tile', 'x', 'y')
+            in_shardings=(sharding,),
+            out_shardings=sharding
         )
         
-        cls._boundary_communication_jit = pjit(
+        cls._boundary_communication_jit = jit(
             jax.vmap(cls._boundary_communication_single, axis_name="tile"),
-            in_shardings=(P('tile', 'x', 'y'), P('tile', 'x', 'y')),
-            out_shardings=(P('tile', 'x', 'y'), P('tile', 'x', 'y'))
+            in_shardings=(sharding, sharding),
+            out_shardings=(sharding, sharding)
         )
 
     # -------------------------------------------------

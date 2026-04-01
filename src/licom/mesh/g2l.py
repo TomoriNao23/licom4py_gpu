@@ -9,7 +9,7 @@ Author: Chtholly <mengleshan@mail.iap.ac.cn>
 import jax
 import jax.numpy as jnp
 from jax.sharding import NamedSharding, Mesh, PartitionSpec as P
-from jax.experimental.pjit import pjit
+from jax import jit
 from typing import Any, Dict, Tuple
 
 
@@ -100,7 +100,7 @@ class Global2Local:
         final_sharding = NamedSharding(cls.mesh, final_spec)
 
         # 3. 执行 Padding。
-        # 定义一个 pjit 内部函数，利用 vmap 或 slice 实现高效填充
+        # 定义一个 jit 内部函数，利用 vmap 或 slice 实现高效填充
         def _pad_core(data):
             # 构造计算 pad 的 slice 数组，其余维度补 : (full slice)
             padding = [(0, 0)] * data.ndim
@@ -108,13 +108,13 @@ class Global2Local:
                 padding[axis] = (h, h)
             return jnp.pad(data, padding, mode='constant', constant_values=0)
 
-        pjit_pad = pjit(
+        jit_pad = jit(
             _pad_core,
             in_shardings=(temp_sharding,),
             out_shardings=final_sharding
         )
 
-        return pjit_pad(data_sharded)
+        return jit_pad(data_sharded)
 
     # ---- 快捷工厂方法 ----
 
