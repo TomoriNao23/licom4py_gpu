@@ -131,11 +131,10 @@ class Global2Local:
         shapes = {
             '2d':       (cls.ntile, nx_h, ny_h),
             '3d':       (cls.ntile, cls.npz, nx_h, ny_h),
+            '4d':       (cls.ntile, nx_h, ny_h, 2, 2),
             '3d1':      (cls.ntile, cls.npz + 1, nx_h, ny_h),
             '3d_agrid': (cls.ntile, nx_h, ny_h, 2),
-            '4d_agrid': (cls.ntile, nx_h, ny_h, 2, 2),
-            # 也可保留 4d 作为一个通用别名
-            '4d':       (cls.ntile, nx_h, ny_h, 2, 2)
+            '4d_agrid': (cls.ntile, nx_h, ny_h, 2, 2)
         }
         
         target_shape = shapes[shape_key]

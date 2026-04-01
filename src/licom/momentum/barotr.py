@@ -143,44 +143,6 @@ def _barotr_rk3_core(state, consts, nbb, dtb):
 
     return jax.lax.fori_loop(0, nbb, body_fun, state)
 
-
-# state 是一个包含若干 (ntile, nx_h, ny_h) 2D 场的元组，
-# 这里统一指定在 (tile, x, y) 三个轴上划分；consts 里同样是 2D 场。
-_state_ps = (
-    P('tile', 'x', 'y'),    # h0
-    P('tile', 'x', 'y'),    # h0p
-    P('tile', 'x', 'y'),    # ub
-    P('tile', 'x', 'y'),    # vb
-    P('tile', 'x', 'y'),    # ubp
-    P('tile', 'x', 'y'),    # vbp
-    None,                   # isb (scalar)
-    P('tile', 'x', 'y'),    # celerity_x
-    P('tile', 'x', 'y'),    # celerity_y
-    P('tile', 'x', 'y'),    # ub_ct
-    P('tile', 'x', 'y'),    # vb_ct
-    P('tile', 'x', 'y'),    # ub_cx
-    P('tile', 'x', 'y'),    # ub_cy
-    P('tile', 'x', 'y'),    # vb_cx
-    P('tile', 'x', 'y'),    # vb_cy
-    P('tile', 'x', 'y'),    # advx
-    P('tile', 'x', 'y'),    # advy
-)
-
-_const_ps = (
-    P('tile', 'x', 'y'),    # dzph_x
-    P('tile', 'x', 'y'),    # dzph_y
-    P('tile', 'x', 'y'),    # pax
-    P('tile', 'x', 'y'),    # pxb
-    P('tile', 'x', 'y'),    # whx
-    P('tile', 'x', 'y'),    # pay
-    P('tile', 'x', 'y'),    # pyb
-    P('tile', 'x', 'y'),    # why
-    P('tile', 'x', 'y'),    # wgp
-    P('tile', 'x', 'y'),    # rdx
-    P('tile', 'x', 'y'),    # rdy
-    P('tile', 'x', 'y'),    # a_f
-)
-
 _barotr_rk2_jit = jit(
     _barotr_rk2_core
 )
