@@ -144,11 +144,13 @@ def _barotr_rk3_core(state, consts, nbb, dtb):
     return jax.lax.fori_loop(0, nbb, body_fun, state)
 
 _barotr_rk2_jit = jit(
-    _barotr_rk2_core
+    _barotr_rk2_core,
+    static_argnums=(2, 3)
 )
 
 _barotr_rk3_jit = jit(
-    _barotr_rk3_core
+    _barotr_rk3_core,
+    static_argnums=(2, 3)
 )
 
 # =====================================================================
