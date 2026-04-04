@@ -143,15 +143,44 @@ def _barotr_rk3_core(state, consts, nbb, dtb):
 
     return jax.lax.fori_loop(0, nbb, body_fun, state)
 
-_barotr_rk2_jit = jit(
-    _barotr_rk2_core,
-    static_argnums=(2, 3)
-)
+# Lazy-initialized jit wrappers.
+# Cannot be created at module load time because the mesh (and hence sharding)
+# is not yet configured. They are built on first call using the actual
+# .sharding of the input arrays, which eliminates UnspecifiedValue errors
+# that arise when large arrays (C1536) can no longer be inlined as XLA
+# constants and must be treated as real sharded inputs.
+_barotr_rk2_jit = None
+_barotr_rk3_jit = None
 
-_barotr_rk3_jit = jit(
-    _barotr_rk3_core,
-    static_argnums=(2, 3)
-)
+
+def _make_barotr_jit(core_fn, state, consts):
+    """Build a jit with explicit in_shardings/out_shardings from actual arrays.
+
+    Every entry must have a concrete Sharding (not None/UnspecifiedValue).
+    When in_shardings contains None, JAX records UnspecifiedValue for that slot.
+    If the corresponding input array then carries a real NamedSharding, JAX
+    calls  dst_sharding.addressable_devices_indices_map()  at runtime and
+    crashes because UnspecifiedValue does not implement the Sharding interface.
+
+    Therefore we require ALL inputs to carry concrete shardings before
+    _make_barotr_jit is called.  The caller (_pack) is responsible for
+    placing 0-d scalars like isb onto a replicated mesh sharding so their
+    sharding is NamedSharding(mesh, P()) rather than SingleDeviceSharding.
+    """
+    def _sh(x):
+        if isinstance(x, jax.Array) and hasattr(x, 'sharding'):
+            return x.sharding
+        return None   # non-JAX objects only (should not occur in practice)
+
+    state_sh  = tuple(_sh(x) for x in state)
+    consts_sh = tuple(_sh(x) for x in consts)
+
+    return jit(
+        core_fn,
+        static_argnums=(2, 3),
+        in_shardings=(state_sh, consts_sh),
+        out_shardings=state_sh,
+    )
 
 # =====================================================================
 # 4. Class Methods
@@ -159,10 +188,24 @@ _barotr_rk3_jit = jit(
 
 def add_barotropic_methods(cls):
     def _pack(self):
-        state = (self.h0, self.h0p, self.ub, self.vb, self.ubp, self.vbp, self.isb,
-                 self.celerity_x, self.celerity_y, self.ub_ct, self.vb_ct, self.ub_cx, 
+        # isb (barotropic step counter) is a 0-d int32 scalar.  By default it
+        # lives on a single device (SingleDeviceSharding(GPU:0)), which is
+        # incompatible with the multi-device NamedSharding of the 2-D fields.
+        # Placing it on a fully-replicated mesh sharding makes it visible on
+        # all devices and gives it a concrete NamedSharding(mesh, P()) that
+        # _make_barotr_jit can record in in_shardings / out_shardings.
+        # Without this, the jit compiles with UnspecifiedValue for that slot
+        # and crashes at runtime with:
+        #   AttributeError: 'UnspecifiedValue' object has no attribute
+        #   'addressable_devices_indices_map'
+        from jax.sharding import NamedSharding
+        isb_replicated = jax.device_put(
+            self.isb, NamedSharding(GPU_Mesh.mesh, P())
+        )
+        state = (self.h0, self.h0p, self.ub, self.vb, self.ubp, self.vbp, isb_replicated,
+                 self.celerity_x, self.celerity_y, self.ub_ct, self.vb_ct, self.ub_cx,
                  self.ub_cy, self.vb_cx, self.vb_cy, self.advx, self.advy)
-        consts = (Dg.dzph_x, Dg.dzph_y, self.pax, self.pxb, self.whx, 
+        consts = (Dg.dzph_x, Dg.dzph_y, self.pax, self.pxb, self.whx,
                   self.pay, self.pyb, self.why, self.wgp, Dg.rdx, Dg.rdy, Dg.a_f)
         return state, consts
 
@@ -172,13 +215,24 @@ def add_barotropic_methods(cls):
          self.ub_cy, self.vb_cx, self.vb_cy, self.advx, self.advy) = state
 
     def barotr_rk2(self):
+        global _barotr_rk2_jit
         state, consts = self._pack()
         with GPU_Mesh.mesh:
+            if _barotr_rk2_jit is None:
+                # Build the jit INSIDE the mesh context so that XLA traces
+                # with the active mesh. Closure-captured Dg.* arrays in
+                # agrid.py / remap.py (Dg.rda, Dg.rdx, Dg.a_gct, ...) are
+                # then visible as sharded arrays rather than unsharded
+                # constants, preventing the UnspecifiedValue sharding error.
+                _barotr_rk2_jit = _make_barotr_jit(_barotr_rk2_core, state, consts)
             self._unpack(_barotr_rk2_jit(state, consts, self.nbb, self.dtb))
 
     def barotr_rk3(self):
+        global _barotr_rk3_jit
         state, consts = self._pack()
         with GPU_Mesh.mesh:
+            if _barotr_rk3_jit is None:
+                _barotr_rk3_jit = _make_barotr_jit(_barotr_rk3_core, state, consts)
             self._unpack(_barotr_rk3_jit(state, consts, self.nbb, self.dtb))
 
     cls.barotr_rk2 = barotr_rk2

@@ -14,7 +14,7 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 from jax import jit
-from jax.sharding import PartitionSpec as P, NamedSharding
+from jax.sharding import PartitionSpec as P
 
 # ==========================================
 # 1. Topology Class
@@ -126,19 +126,21 @@ class Communication:
             routing_list[tB][dB] = [tA, dA, tid]
         cls._routing = jnp.array(routing_list, dtype=jnp.int32)
 
-        # Vectorize over the 'tile' axis and use jit to preserve sharding
-        # in_shardings and out_shardings enforce logic
-        sharding = NamedSharding(cls.mesh, P('tile', 'x', 'y'))
+        # Vectorize over the 'tile' axis and use jit to preserve sharding.
+        # NOTE: Do NOT specify in_shardings/out_shardings here.
+        # These functions may be called as nested jits inside _barotr_rk2_jit
+        # (which has no in_shardings). Mixing explicit sharding constraints in
+        # inner jits with no-constraint outer jits causes XLA to produce
+        # UnspecifiedValue sharding objects, which crash at runtime with:
+        #   AttributeError: 'UnspecifiedValue' object has no attribute
+        #   'addressable_devices_indices_map'
+        # Sharding is instead propagated through the active Mesh context.
         cls._update_domain_jit = jit(
-            jax.vmap(cls._update_domain_single, axis_name="tile"),
-            in_shardings=(sharding,),
-            out_shardings=sharding
+            jax.vmap(cls._update_domain_single, axis_name="tile")
         )
-        
+
         cls._boundary_communication_jit = jit(
-            jax.vmap(cls._boundary_communication_single, axis_name="tile"),
-            in_shardings=(sharding, sharding),
-            out_shardings=(sharding, sharding)
+            jax.vmap(cls._boundary_communication_single, axis_name="tile")
         )
 
     # -------------------------------------------------
