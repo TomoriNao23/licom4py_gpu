@@ -11,6 +11,7 @@ REVISION HISTORY:
     22/09/2025 - Initial implementation of barotropic solver
     15/03/2026 - Unified JIT and sharding compatibility
     19/03/2026 - Refactor imports to package-level paths
+    04/04/2026 - Fix JAX multidimensional UnspecifiedValue sharding issue and strip isb from jit state
 """
 
 import jax
@@ -129,7 +130,7 @@ def _barotr_rk2_core(state, consts, nbb, dtb):
         # RK2 Step 2
         res2 = _step_rk_logic(h0_1, h0p, ub_1, vb_1, ubp, vbp, consts, dtb, 0.0, True)
         h0_2, ub_2, vb_2 = res2[0], res2[1], res2[2]
-        return (h0_2, h0_2, ub_2, vb_2, ub_2, vb_2, jnp.int32(i + 1), *res2[3:])
+        return (h0_2, h0_2, ub_2, vb_2, ub_2, vb_2, *res2[3:])
 
     return jax.lax.fori_loop(0, nbb, body_fun, state)
 
@@ -139,40 +140,25 @@ def _barotr_rk3_core(state, consts, nbb, dtb):
         res1 = _step_rk_logic(h0, h0p, ub, vb, ubp, vbp, consts, dtb/3.0, 1.0, False)
         res2 = _step_rk_logic(res1[0], h0p, res1[1], res1[2], ubp, vbp, consts, dtb/2.0, 1.0, False)
         res3 = _step_rk_logic(res2[0], h0p, res2[1], res2[2], ubp, vbp, consts, dtb, 1.0, True)
-        return (res3[0], res3[0], res3[1], res3[2], res3[1], res3[2], jnp.int32(i + 1), *res3[3:])
+        return (res3[0], res3[0], res3[1], res3[2], res3[1], res3[2], *res3[3:])
 
     return jax.lax.fori_loop(0, nbb, body_fun, state)
 
-# Lazy-initialized jit wrappers.
-# Cannot be created at module load time because the mesh (and hence sharding)
-# is not yet configured. They are built on first call using the actual
-# .sharding of the input arrays, which eliminates UnspecifiedValue errors
-# that arise when large arrays (C1536) can no longer be inlined as XLA
-# constants and must be treated as real sharded inputs.
 _barotr_rk2_jit = None
 _barotr_rk3_jit = None
 
-
 def _make_barotr_jit(core_fn, state, consts):
-    """Build a jit with explicit in_shardings/out_shardings from actual arrays.
-
-    Every entry must have a concrete Sharding (not None/UnspecifiedValue).
-    When in_shardings contains None, JAX records UnspecifiedValue for that slot.
-    If the corresponding input array then carries a real NamedSharding, JAX
-    calls  dst_sharding.addressable_devices_indices_map()  at runtime and
-    crashes because UnspecifiedValue does not implement the Sharding interface.
-
-    Therefore we require ALL inputs to carry concrete shardings before
-    _make_barotr_jit is called.  The caller (_pack) is responsible for
-    placing 0-d scalars like isb onto a replicated mesh sharding so their
-    sharding is NamedSharding(mesh, P()) rather than SingleDeviceSharding.
-    """
+    # This minimal lazy builder is STRICTLY REQUIRED because if we initialize  
+    # a bare `jit` without `out_shardings`, JAX (v0.4.x) will output arrays  
+    # whose Python-level sharding property is marked as `UnspecifiedValue`. 
+    # When passed back into the loop on the next schedule step, these stripped 
+    # layouts will instantly crash the compiler.
+    # It must be lazy because the runtime matrices (and their Mesh/P()) 
+    # do not exist during module import.
     def _sh(x):
-        if isinstance(x, jax.Array) and hasattr(x, 'sharding'):
-            return x.sharding
-        return None   # non-JAX objects only (should not occur in practice)
-
-    state_sh  = tuple(_sh(x) for x in state)
+        return getattr(x, 'sharding', None)
+        
+    state_sh = tuple(_sh(x) for x in state)
     consts_sh = tuple(_sh(x) for x in consts)
 
     return jit(
@@ -188,21 +174,7 @@ def _make_barotr_jit(core_fn, state, consts):
 
 def add_barotropic_methods(cls):
     def _pack(self):
-        # isb (barotropic step counter) is a 0-d int32 scalar.  By default it
-        # lives on a single device (SingleDeviceSharding(GPU:0)), which is
-        # incompatible with the multi-device NamedSharding of the 2-D fields.
-        # Placing it on a fully-replicated mesh sharding makes it visible on
-        # all devices and gives it a concrete NamedSharding(mesh, P()) that
-        # _make_barotr_jit can record in in_shardings / out_shardings.
-        # Without this, the jit compiles with UnspecifiedValue for that slot
-        # and crashes at runtime with:
-        #   AttributeError: 'UnspecifiedValue' object has no attribute
-        #   'addressable_devices_indices_map'
-        from jax.sharding import NamedSharding
-        isb_replicated = jax.device_put(
-            self.isb, NamedSharding(GPU_Mesh.mesh, P())
-        )
-        state = (self.h0, self.h0p, self.ub, self.vb, self.ubp, self.vbp, isb_replicated,
+        state = (self.h0, self.h0p, self.ub, self.vb, self.ubp, self.vbp,
                  self.celerity_x, self.celerity_y, self.ub_ct, self.vb_ct, self.ub_cx,
                  self.ub_cy, self.vb_cx, self.vb_cy, self.advx, self.advy)
         consts = (Dg.dzph_x, Dg.dzph_y, self.pax, self.pxb, self.whx,
@@ -210,7 +182,7 @@ def add_barotropic_methods(cls):
         return state, consts
 
     def _unpack(self, state):
-        (self.h0, self.h0p, self.ub, self.vb, self.ubp, self.vbp, self.isb,
+        (self.h0, self.h0p, self.ub, self.vb, self.ubp, self.vbp,
          self.celerity_x, self.celerity_y, self.ub_ct, self.vb_ct, self.ub_cx, 
          self.ub_cy, self.vb_cx, self.vb_cy, self.advx, self.advy) = state
 
@@ -219,13 +191,9 @@ def add_barotropic_methods(cls):
         state, consts = self._pack()
         with GPU_Mesh.mesh:
             if _barotr_rk2_jit is None:
-                # Build the jit INSIDE the mesh context so that XLA traces
-                # with the active mesh. Closure-captured Dg.* arrays in
-                # agrid.py / remap.py (Dg.rda, Dg.rdx, Dg.a_gct, ...) are
-                # then visible as sharded arrays rather than unsharded
-                # constants, preventing the UnspecifiedValue sharding error.
                 _barotr_rk2_jit = _make_barotr_jit(_barotr_rk2_core, state, consts)
             self._unpack(_barotr_rk2_jit(state, consts, self.nbb, self.dtb))
+#        self.isb += self.nbb
 
     def barotr_rk3(self):
         global _barotr_rk3_jit
@@ -234,6 +202,7 @@ def add_barotropic_methods(cls):
             if _barotr_rk3_jit is None:
                 _barotr_rk3_jit = _make_barotr_jit(_barotr_rk3_core, state, consts)
             self._unpack(_barotr_rk3_jit(state, consts, self.nbb, self.dtb))
+#        self.isb += self.nbb
 
     cls.barotr_rk2 = barotr_rk2
     cls.barotr_rk3 = barotr_rk3
