@@ -62,17 +62,51 @@ class Global2Local:
         
         return P(*spec_list)
 
+   
     @classmethod
     def distribute_pre_padded(cls, global_data: jnp.ndarray) -> jnp.ndarray:
-        """
-        将【已经包含 Halo 区】的数据分配到显卡。
-        自动识别逻辑维度并放置，不需要额外填充边界。
-        """
+
+        h = cls.halo
+
         spec = cls.get_spec(global_data.shape)
         sharding = NamedSharding(cls.mesh, spec)
-        
-        # 将数据转换成 JAX 数组并按照指定的 sharding 分片
-        return jax.device_put(global_data, sharding)
+
+        spatial_axes = [
+            i for i, s in enumerate(spec) if s in ("x", "y")
+        ]
+
+        x_axis, y_axis = spatial_axes
+        global_shape = global_data.shape
+
+        def slice_fn(idx):
+
+            slc = list(idx)
+
+            x_slice = slc[x_axis]
+            y_slice = slc[y_axis]
+
+            x_start = 0 if x_slice.start is None else x_slice.start
+            x_stop  = global_shape[x_axis] if x_slice.stop is None else x_slice.stop
+
+            y_start = 0 if y_slice.start is None else y_slice.start
+            y_stop  = global_shape[y_axis] if y_slice.stop is None else y_slice.stop
+
+            x0 = max(0, x_start - h)
+            x1 = min(global_shape[x_axis], x_stop + h)
+
+            y0 = max(0, y_start - h)
+            y1 = min(global_shape[y_axis], y_stop + h)
+
+            slc[x_axis] = slice(x0, x1)
+            slc[y_axis] = slice(y0, y1)
+
+            return global_data[tuple(slc)]
+
+        return jax.make_array_from_callback(
+            global_data.shape,
+            sharding,
+            slice_fn
+        )
 
     @classmethod
     def distribute(cls, global_data: jnp.ndarray) -> jnp.ndarray:
