@@ -26,6 +26,14 @@ def gather_tiles_with_id(data, tile):
         from mpi4py import MPI
         import numpy as np
 
+        # nx + 6 is the target dimension for all spatial fields
+        nx = FMS_chtholly.mp.nx
+        target_dim = nx + 6
+
+        if any(s > target_dim for s in data.shape):
+            slices = tuple(slice(0, target_dim) if s > target_dim else slice(None) for s in data.shape)
+            data = np.ascontiguousarray(data[slices])
+
         comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
         size = comm.Get_size()
@@ -54,11 +62,6 @@ def gather_tiles_with_id(data, tile):
         # 3. rank 0 按 tile 重排
         if rank == 0:
             tiles = {}
-            # We can detect nx from the local geometry in python FMS wrapper
-            # It's exposed by FMS_chtholly.mp.nx
-            from use_mpp import FMS_chtholly
-            nx = FMS_chtholly.mp.nx
-            target_dim = nx + 6
 
             for r in range(size):
                 arr = recvbuf[r]
@@ -105,7 +108,6 @@ def generate(nx: int, px: int, py: int, full: bool = False):
 
     # Gather data across processes
     all_data = {}
-    target_dim = nx + 6
 
     for key, data in a.items():
         if key in ["k2e_coef", "a_pt"]:

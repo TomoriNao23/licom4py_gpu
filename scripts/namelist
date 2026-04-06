@@ -9,7 +9,7 @@ case = w92case2
 start_year = 2000
 start_month = 1
 start_day = 1
-integration_days = 20
+integration_days = 90
 #integration_hours = 2
 #integration_months = 1
 
