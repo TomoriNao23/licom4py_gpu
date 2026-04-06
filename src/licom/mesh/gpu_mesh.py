@@ -54,5 +54,5 @@ class GPU_Mesh:
         #cls.sharding_2d = NamedSharding(cls.mesh, P('tile', 'x', 'y'))
 
         # Global2Local and Communication now use this sharding
-        Global2Local.configure(cls.mesh, cls.halo, cls.nx_local, cls.ny_local, cls.npz, cls.ntile)
+        Global2Local.configure(cls.mesh, cls.halo, cls.nx_local, cls.ny_local, cls.nx, cls.ny, cls.npz, cls.ntile)
         Communication.configure(cls.halo, cls.nx_local, cls.ny_local, cls.mesh)

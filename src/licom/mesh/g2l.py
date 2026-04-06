@@ -1,6 +1,6 @@
 """
 File: g2l.py
-Description: Refactored Global-to-Local distribution logic with dynamic 
+Description: Refactored Global-to-Local distribution logic with dynamic
              dimension detection and halo handling for different grid structures.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
@@ -9,7 +9,6 @@ Author: Chtholly <mengleshan@mail.iap.ac.cn>
 import jax
 import jax.numpy as jnp
 from jax.sharding import NamedSharding, Mesh, PartitionSpec as P
-from jax import jit
 from typing import Any, Dict, Tuple
 
 
@@ -19,166 +18,136 @@ class Global2Local:
     halo: int = 3
     nx_local: int = 0
     ny_local: int = 0
+    nx: int = 0
+    ny: int = 0
     npz: int = 30
     ntile: int = 6
     dtype: jnp.dtype = jnp.float64
 
     @classmethod
-    def configure(cls, mesh, halo: int, nx_local: int, ny_local: int, 
-                  npz: int, ntile: int = 6) -> None:
+    def configure(
+        cls,
+        mesh,
+        halo: int,
+        nx_local: int,
+        ny_local: int,
+        nx: int,
+        ny: int,
+        npz: int,
+        ntile: int = 6,
+    ) -> None:
         """从 GPU_Mesh 获取基础配置"""
         cls.mesh = mesh
         cls.halo = halo
         cls.nx_local = nx_local
         cls.ny_local = ny_local
+        cls.nx = nx
+        cls.ny = ny
         cls.npz = npz
         cls.ntile = ntile
 
     @classmethod
     def get_spec(cls, shape: Tuple[int, ...]) -> P:
         """
-        核心逻辑：动态检测维度并返回 PartitionSpec
+        核心逻辑：动态检测维度并返回 PartitionSpec。
         规则：
-        1. 维度 0 (size=6) 始终是 'tile'
-        2. 跳过维度 0 后，找到前两个 size > nx_local 的维度分别映射为 'x' 和 'y'
-        3. 其他维度映射为 None (不剖分)
+          1. 维度 0 (size == ntile) 始终映射为 'tile'
+          2. 跳过维度 0 后，前两个 size > nx_local 的维度依次映射为 'x' 和 'y'
+          3. 其余维度映射为 None（不剖分）
         """
         spec_list = [None] * len(shape)
         if len(shape) > 0 and shape[0] == cls.ntile:
-            spec_list[0] = 'tile'
-        
+            spec_list[0] = "tile"
+
         found_spatial = 0
         for i in range(1, len(shape)):
-            # 这里 nx_local 是不含 halo 的 local 宽度。
-            # 如果是已经带 halo 的数组，其维度 size 必然大于 nx_local
-            if shape[i] > cls.nx_local and found_spatial < 2:
-                if found_spatial == 0:
-                    spec_list[i] = 'x'
-                else:
-                    spec_list[i] = 'y'
+            # nx_local 是不含 halo 的 local 宽度；
+            # 带 halo 的数组其空间维 size 必然大于 nx_local。
+            if shape[i] >= cls.nx_local and found_spatial < 2:
+                spec_list[i] = "x" if found_spatial == 0 else "y"
                 found_spatial += 1
-            else:
-                spec_list[i] = None
-        
+
         return P(*spec_list)
 
-   
     @classmethod
     def distribute_pre_padded(cls, global_data: jnp.ndarray) -> jnp.ndarray:
-
+        """
+        将【已包含最外侧 Halo 区】的全局数组分配到各显卡。
+        每块设备恰好获得 (nx_local + 2h) × (ny_local + 2h) 的数据。
+        """
         h = cls.halo
-
         spec = cls.get_spec(global_data.shape)
-        sharding = NamedSharding(cls.mesh, spec)
+        spatial_axes = [i for i, s in enumerate(spec) if s in ("x", "y")]
 
-        spatial_axes = [
-            i for i, s in enumerate(spec) if s in ("x", "y")
-        ]
+        if len(spatial_axes) != 2:
+            return jax.device_put(global_data, NamedSharding(cls.mesh, spec))
 
         x_axis, y_axis = spatial_axes
-        global_shape = global_data.shape
+        nx_h = cls.nx_local + 2 * h
+        ny_h = cls.ny_local + 2 * h
+        px = cls.mesh.shape["x"]
+        py = cls.mesh.shape["y"]
+
+        target_shape = list(global_data.shape)
+        target_shape[x_axis] = px * nx_h
+        target_shape[y_axis] = py * ny_h
+        target_shape = tuple(target_shape)
+
+        sharding = NamedSharding(cls.mesh, spec)
 
         def slice_fn(idx):
-
             slc = list(idx)
+            x_start = 0 if slc[x_axis].start is None else slc[x_axis].start
+            y_start = 0 if slc[y_axis].start is None else slc[y_axis].start
 
-            x_slice = slc[x_axis]
-            y_slice = slc[y_axis]
+            ix = x_start // nx_h
+            iy = y_start // ny_h
 
-            x_start = 0 if x_slice.start is None else x_slice.start
-            x_stop  = global_shape[x_axis] if x_slice.stop is None else x_slice.stop
-
-            y_start = 0 if y_slice.start is None else y_slice.start
-            y_stop  = global_shape[y_axis] if y_slice.stop is None else y_slice.stop
-
-            x0 = max(0, x_start - h)
-            x1 = min(global_shape[x_axis], x_stop + h)
-
-            y0 = max(0, y_start - h)
-            y1 = min(global_shape[y_axis], y_stop + h)
-
-            slc[x_axis] = slice(x0, x1)
-            slc[y_axis] = slice(y0, y1)
-
+            slc[x_axis] = slice(ix * cls.nx_local, ix * cls.nx_local + nx_h)
+            slc[y_axis] = slice(iy * cls.ny_local, iy * cls.ny_local + ny_h)
             return global_data[tuple(slc)]
 
-        return jax.make_array_from_callback(
-            global_data.shape,
-            sharding,
-            slice_fn
-        )
+        return jax.make_array_from_callback(target_shape, sharding, slice_fn)
 
     @classmethod
     def distribute(cls, global_data: jnp.ndarray) -> jnp.ndarray:
         """
-        将【不包含 Halo 区】的原始数据分配到显卡并【补全全零边缘】。
+        将【不包含 Halo 区】的原始全局数组在 CPU 上整体 pad 后，
+        复用 distribute_pre_padded 分卡。
         """
-        # 1. 探测原始数据的分片方式
-        # 先按原始形状探测，这通常是用于放置初始全局数组
-        temp_spec = cls.get_spec(global_data.shape)
-        temp_sharding = NamedSharding(cls.mesh, temp_spec)
-        data_sharded = jax.device_put(global_data, temp_sharding)
-
-        # 2. 定义带 Halo 的最终形状和分片规格
         h = cls.halo
-        # 探测哪些维是空间维 (x, y)，对应的维需要增加 2*h
-        spatial_axes = []
-        for i, name in enumerate(temp_spec):
-            if name in ('x', 'y'): spatial_axes.append(i)
+        spec = cls.get_spec(global_data.shape)
+        spatial_axes = [i for i, s in enumerate(spec) if s in ("x", "y")]
 
-        final_shape = list(global_data.shape)
+        padding = [(0, 0)] * global_data.ndim
         for axis in spatial_axes:
-            final_shape[axis] += 2 * h
-        
-        final_spec = cls.get_spec(tuple(final_shape))
-        final_sharding = NamedSharding(cls.mesh, final_spec)
+            padding[axis] = (h, h)
+        padded = jnp.pad(global_data, padding, mode="constant", constant_values=0)
 
-        # 3. 执行 Padding。
-        # 定义一个 jit 内部函数，利用 vmap 或 slice 实现高效填充
-        def _pad_core(data):
-            # 构造计算 pad 的 slice 数组，其余维度补 : (full slice)
-            padding = [(0, 0)] * data.ndim
-            for axis in spatial_axes:
-                padding[axis] = (h, h)
-            return jnp.pad(data, padding, mode='constant', constant_values=0)
-
-        jit_pad = jit(
-            _pad_core,
-            in_shardings=(temp_sharding,),
-            out_shardings=final_sharding
-        )
-
-        return jit_pad(data_sharded)
+        return cls.distribute_pre_padded(padded)
 
     # ---- 快捷工厂方法 ----
 
     @classmethod
     def zeros(cls, shape_key: str) -> jnp.ndarray:
         """
-        根据 key 创建带 Halo 的 sharded zero 数组
+        根据 key 创建带 Halo 的 sharded 零数组。
+        使用【不含 halo】的全局形状构造零数组，调用 distribute 完成 pad 与分卡。
         """
-        # 这里可以使用简单的固化映射
-        h = cls.halo
-        nx_h, ny_h = cls.nx_local + 2*h, cls.ny_local + 2*h
-        
-        # 简单定义一些常用的 shape
+        # 全局形状（不含 halo）
         shapes = {
-            '2d':       (cls.ntile, nx_h, ny_h),
-            '3d':       (cls.ntile, cls.npz, nx_h, ny_h),
-            '4d':       (cls.ntile, nx_h, ny_h, 2, 2),
-            '3d1':      (cls.ntile, cls.npz + 1, nx_h, ny_h),
-            '3d_agrid': (cls.ntile, nx_h, ny_h, 2),
-            '4d_agrid': (cls.ntile, nx_h, ny_h, 2, 2)
+            "2d":       (cls.ntile, cls.nx, cls.ny),
+            "3d":       (cls.ntile, cls.npz, cls.nx, cls.ny),
+            "4d":       (cls.ntile, cls.nx, cls.ny, 2, 2),
+            "3d1":      (cls.ntile, cls.npz + 1, cls.nx, cls.ny),
+            "3d_agrid": (cls.ntile, cls.nx, cls.ny, 2),
+            "4d_agrid": (cls.ntile, cls.nx, cls.ny, 2, 2),
         }
-        
-        target_shape = shapes[shape_key]
-        spec = cls.get_spec(target_shape)
-        sharding = NamedSharding(cls.mesh, spec)
-        
-        return jax.device_put(jnp.zeros(target_shape, dtype=cls.dtype), sharding)
+
+        return cls.distribute(jnp.zeros(shapes[shape_key], dtype=cls.dtype))
 
     @classmethod
-    def allocate(cls, owner: Any, field_groups: Dict[str, Any]):
+    def allocate(cls, owner: Any, field_groups: Dict[str, Any]) -> None:
         """批量分配字段"""
         for shape_key, names in field_groups.items():
             for name in names:
