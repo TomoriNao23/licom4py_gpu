@@ -5,12 +5,13 @@ Description: Polynomial interpolation functions as static methods of the Poly cl
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-20
-Updated: 2026-03-19
+Updated: 2026-04-07
 
 REVISION HISTORY:
     20/09/2025 - Initial implementation (vector only)
     21/09/2025 - Added scalar methods
     19/03/2026 - Wrap functions as Poly static methods
+    07/04/2026 - Replaced zeros_like buffer scatters with native jnp.pad
 """
 
 # Third-party imports
@@ -47,21 +48,22 @@ class Poly:
         Returns:
             (eta_star_east, eta_star_west)
         """
-        eta_star_e = jnp.zeros_like(eta).at[..., 2:-2, :].set(
+        core_e = (
             Em23vm * eta[..., 0:-4, :] +
             Em13vm * eta[..., 1:-3, :] +
             Ep03vm * eta[..., 2:-2, :] +
             Ep13vm * eta[..., 3:-1, :] +
             Ep23vm * eta[..., 4:,   :]
         )
-        eta_star_w = jnp.zeros_like(eta).at[..., 2:-2, :].set(
+        core_w = (
             Ep23vm * eta[..., 0:-4, :] +
             Ep13vm * eta[..., 1:-3, :] +
             Ep03vm * eta[..., 2:-2, :] +
             Em13vm * eta[..., 3:-1, :] +
             Em23vm * eta[..., 4:,   :]
         )
-        return eta_star_e, eta_star_w
+        pad = [(0, 0)] * (eta.ndim - 2) + [(2, 2), (0, 0)]
+        return jnp.pad(core_e, pad), jnp.pad(core_w, pad)
 
     @staticmethod
     @functools.partial(jax.jit, static_argnums=())
@@ -75,21 +77,22 @@ class Poly:
         Returns:
             (eta_star_north, eta_star_south)
         """
-        eta_star_n = jnp.zeros_like(eta).at[..., :, 2:-2].set(
+        core_n = (
             Em23vm * eta[..., :, 0:-4] +
             Em13vm * eta[..., :, 1:-3] +
             Ep03vm * eta[..., :, 2:-2] +
             Ep13vm * eta[..., :, 3:-1] +
             Ep23vm * eta[..., :, 4:  ]
         )
-        eta_star_s = jnp.zeros_like(eta).at[..., :, 2:-2].set(
+        core_s = (
             Ep23vm * eta[..., :, 0:-4] +
             Ep13vm * eta[..., :, 1:-3] +
             Ep03vm * eta[..., :, 2:-2] +
             Em13vm * eta[..., :, 3:-1] +
             Em23vm * eta[..., :, 4:  ]
         )
-        return eta_star_n, eta_star_s
+        pad = [(0, 0)] * (eta.ndim - 2) + [(0, 0), (2, 2)]
+        return jnp.pad(core_n, pad), jnp.pad(core_s, pad)
 
     @staticmethod
     @functools.partial(jax.jit, static_argnums=())
@@ -116,11 +119,13 @@ class Poly:
         Returns:
             scal_out: interpolated scalar field
         """
-        return jnp.zeros_like(scal).at[..., 3:-2, 3:-2].set(
+        core = (
             M13vm * (scal[..., 2:-3, 3:-2] + scal[..., 3:-2, 3:-2]) +
             M23vm * (scal[..., 1:-4, 3:-2] + scal[..., 4:-1, 3:-2]) +
             M33vm * (scal[..., :-5,  3:-2] + scal[..., 5:,   3:-2])
         )
+        pad = [(0, 0)] * (scal.ndim - 2) + [(3, 2), (3, 2)]
+        return jnp.pad(core, pad)
 
     @staticmethod
     @functools.partial(jax.jit, static_argnums=())
@@ -134,11 +139,13 @@ class Poly:
         Returns:
             scal_out: interpolated scalar field
         """
-        return jnp.zeros_like(scal).at[..., 3:-2, 3:-2].set(
+        core = (
             M13vm * (scal[..., 3:-2, 2:-3] + scal[..., 3:-2, 3:-2]) +
             M23vm * (scal[..., 3:-2, 1:-4] + scal[..., 3:-2, 4:-1]) +
             M33vm * (scal[..., 3:-2, :-5 ] + scal[..., 3:-2, 5:   ])
         )
+        pad = [(0, 0)] * (scal.ndim - 2) + [(3, 2), (3, 2)]
+        return jnp.pad(core, pad)
 
     @staticmethod
     @functools.partial(jax.jit, static_argnums=())

@@ -5,13 +5,14 @@ Description: Grid remapping functions as static methods of the Remap class.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-20
-Updated: 2026-03-19
+Updated: 2026-04-07
 
 REVISION HISTORY:
     20/09/2025 - Initial implementation
     21/09/2025 - Added upwind scheme
     19/03/2026 - Refactor imports to package-level paths
     19/03/2026 - Wrap functions as Remap static methods
+    07/04/2026 - Replaced zeros_like buffer scatters with native jnp.pad
 """
 
 # Third-party imports
@@ -42,12 +43,8 @@ class Remap:
         Returns:
             (uct, vct) - contravariant velocities on A-grid
         """
-        uct = jnp.zeros_like(u).at[..., :].set(
-            (Dg.a_gct[..., 0, 0] * u + Dg.a_gct[..., 0, 1] * v) * Dg.a_sina
-        )
-        vct = jnp.zeros_like(v).at[..., :].set(
-            (Dg.a_gct[..., 1, 0] * u + Dg.a_gct[..., 1, 1] * v) * Dg.a_sina
-        )
+        uct = (Dg.a_gct[..., 0, 0] * u + Dg.a_gct[..., 0, 1] * v) * Dg.a_sina
+        vct = (Dg.a_gct[..., 1, 0] * u + Dg.a_gct[..., 1, 1] * v) * Dg.a_sina
         return uct, vct
 
     @staticmethod
@@ -64,12 +61,14 @@ class Remap:
         ue, uw = Poly.vector_ew(u)
         un, us = Poly.vector_ns(v)
 
-        uc = jnp.zeros_like(u).at[..., 3:-2, :].set(
-            0.5 * (ue[..., 2:-3, :] + uw[..., 3:-2, :])
-        )
-        vc = jnp.zeros_like(v).at[..., :, 3:-2].set(
-            0.5 * (un[..., :, 2:-3] + us[..., :, 3:-2])
-        )
+        core_uc = 0.5 * (ue[..., 2:-3, :] + uw[..., 3:-2, :])
+        pad_uc = [(0, 0)] * (u.ndim - 2) + [(3, 2), (0, 0)]
+        uc = jnp.pad(core_uc, pad_uc)
+
+        core_vc = 0.5 * (un[..., :, 2:-3] + us[..., :, 3:-2])
+        pad_vc = [(0, 0)] * (v.ndim - 2) + [(0, 0), (3, 2)]
+        vc = jnp.pad(core_vc, pad_vc)
+
         return uc, vc
 
     @staticmethod
@@ -86,12 +85,14 @@ class Remap:
         un, us = Poly.vector_ns(u)
         ve, vw = Poly.vector_ew(v)
 
-        ud = jnp.zeros_like(u).at[..., 3:-2, :].set(
-            0.5 * (un[..., 2:-3, :] + us[..., 3:-2, :])
-        )
-        vd = jnp.zeros_like(v).at[..., :, 3:-2].set(
-            0.5 * (ve[..., :, 2:-3] + vw[..., :, 3:-2])
-        )
+        core_ud = 0.5 * (un[..., 2:-3, :] + us[..., 3:-2, :])
+        pad_ud = [(0, 0)] * (u.ndim - 2) + [(3, 2), (0, 0)]
+        ud = jnp.pad(core_ud, pad_ud)
+
+        core_vd = 0.5 * (ve[..., :, 2:-3] + vw[..., :, 3:-2])
+        pad_vd = [(0, 0)] * (v.ndim - 2) + [(0, 0), (3, 2)]
+        vd = jnp.pad(core_vd, pad_vd)
+
         return ud, vd
 
     @staticmethod
@@ -113,20 +114,22 @@ class Remap:
         un, us = Poly.vector_ns(u)
         ve, vw = Poly.vector_ew(v)
 
-        vd = jnp.zeros_like(v).at[..., 3:-2, :].set(
-            jnp.where(
-                uc[..., 3:-2, :] > 0.0,
-                ve[..., 2:-3, :],
-                vw[..., 3:-2, :],
-            )
+        core_vd = jnp.where(
+            uc[..., 3:-2, :] > 0.0,
+            ve[..., 2:-3, :],
+            vw[..., 3:-2, :],
         )
-        ud = jnp.zeros_like(u).at[..., :, 3:-2].set(
-            jnp.where(
-                vc[..., :, 3:-2] > 0.0,
-                un[..., :, 2:-3],
-                us[..., :, 3:-2],
-            )
+        pad_vd = [(0, 0)] * (v.ndim - 2) + [(3, 2), (0, 0)]
+        vd = jnp.pad(core_vd, pad_vd)
+
+        core_ud = jnp.where(
+            vc[..., :, 3:-2] > 0.0,
+            un[..., :, 2:-3],
+            us[..., :, 3:-2],
         )
+        pad_ud = [(0, 0)] * (u.ndim - 2) + [(0, 0), (3, 2)]
+        ud = jnp.pad(core_ud, pad_ud)
+
         return ud, vd
 
     @staticmethod

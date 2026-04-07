@@ -5,12 +5,13 @@ Description: A-grid operators as static methods of the AGrid class.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-21
-Updated: 2026-03-19
+Updated: 2026-04-07
 
 REVISION HISTORY:
     21/09/2025 - Initial implementation
     19/03/2026 - Refactor imports to package-level paths
     19/03/2026 - Wrap functions as AGrid static methods
+    07/04/2026 - Replaced zeros_like buffer scatters with native jnp.pad
 """
 
 # Third-party imports
@@ -49,15 +50,14 @@ class AGrid:
         Returns:
             vort: vorticity [xsize, ysize]
         """
-        vort = jnp.zeros_like(uu).at[..., :-1, :-1].set(
-            Dg.rda[..., :-1, :-1] * (
-                uu[..., :-1, :-1] * Dg.d_dx[..., :-1, :-1] +
-                vv[..., 1:, :-1] * Dg.c_dy[..., 1:, :-1] -        # vv(i+1,j) * c_dy(i+1,j)
-                uu[..., :-1, 1:] * Dg.d_dx[..., :-1, 1:] -        # uu(i,j+1) * d_dx(i,j+1)
-                vv[..., :-1, :-1] * Dg.c_dy[..., :-1, :-1]          # vv(i,j) * c_dy(i,j)
-            )
+        core = Dg.rda[..., :-1, :-1] * (
+            uu[..., :-1, :-1] * Dg.d_dx[..., :-1, :-1] +
+            vv[..., 1:, :-1] * Dg.c_dy[..., 1:, :-1] -        # vv(i+1,j) * c_dy(i+1,j)
+            uu[..., :-1, 1:] * Dg.d_dx[..., :-1, 1:] -        # uu(i,j+1) * d_dx(i,j+1)
+            vv[..., :-1, :-1] * Dg.c_dy[..., :-1, :-1]          # vv(i,j) * c_dy(i,j)
         )
-        return vort
+        pad = [(0, 0)] * (uu.ndim - 2) + [(0, 1), (0, 1)]
+        return jnp.pad(core, pad)
 
     @staticmethod
     def div(uu: jnp.ndarray, vv: jnp.ndarray) -> jnp.ndarray:
@@ -71,15 +71,14 @@ class AGrid:
         Returns:
             div: divergence [xsize, ysize]
         """
-        div = jnp.zeros_like(uu).at[..., :-1, :-1].set(
-            Dg.rda[..., :-1, :-1] * (
-                uu[..., 1:, :-1] * Dg.c_dy[..., 1:, :-1] -        # UX(i+1,j) * c_dy(i+1,j)
-                uu[..., :-1, :-1] * Dg.c_dy[..., :-1, :-1] +        # UX(i,j) * c_dy(i,j)
-                vv[..., :-1, 1:] * Dg.d_dx[..., :-1, 1:] -        # UY(i,j+1) * d_dx(i,j+1)
-                vv[..., :-1, :-1] * Dg.d_dx[..., :-1, :-1]          # UY(i,j) * d_dx(i,j)
-            )
+        core = Dg.rda[..., :-1, :-1] * (
+            uu[..., 1:, :-1] * Dg.c_dy[..., 1:, :-1] -        # UX(i+1,j) * c_dy(i+1,j)
+            uu[..., :-1, :-1] * Dg.c_dy[..., :-1, :-1] +        # UX(i,j) * c_dy(i,j)
+            vv[..., :-1, 1:] * Dg.d_dx[..., :-1, 1:] -        # UY(i,j+1) * d_dx(i,j+1)
+            vv[..., :-1, :-1] * Dg.d_dx[..., :-1, :-1]          # UY(i,j) * d_dx(i,j)
         )
-        return div
+        pad = [(0, 0)] * (uu.ndim - 2) + [(0, 1), (0, 1)]
+        return jnp.pad(core, pad)
 
     @staticmethod
     def grad(eta: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
@@ -96,14 +95,8 @@ class AGrid:
         uhalf = Poly.scalar_x(eta)
         vhalf = Poly.scalar_y(eta)
 
-        gradx = jnp.zeros_like(eta).at[..., 3:-3, 3:-3].set(
-            Dg.rdx[..., 3:-3, 3:-3] * (
-                uhalf[..., 4:-2, 3:-3] - uhalf[..., 3:-3, 3:-3]
-            )
-        )
-        grady = jnp.zeros_like(eta).at[..., 3:-3, 3:-3].set(
-            Dg.rdy[..., 3:-3, 3:-3] * (
-                vhalf[..., 3:-3, 4:-2] - vhalf[..., 3:-3, 3:-3]
-            )
-        )
-        return gradx, grady
+        core_x = Dg.rdx[..., 3:-3, 3:-3] * (uhalf[..., 4:-2, 3:-3] - uhalf[..., 3:-3, 3:-3])
+        core_y = Dg.rdy[..., 3:-3, 3:-3] * (vhalf[..., 3:-3, 4:-2] - vhalf[..., 3:-3, 3:-3])
+        
+        pad = [(0, 0)] * (eta.ndim - 2) + [(3, 3), (3, 3)]
+        return jnp.pad(core_x, pad), jnp.pad(core_y, pad)

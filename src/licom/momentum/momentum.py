@@ -36,9 +36,7 @@ class Momentum(MomentumData):
         self.nbb = namelist.baroclinic_dt // namelist.barotropic_dt
         ## Barotropic time step
         self.dtb = float(namelist.barotropic_dt)
-
-        # barotropic method selection
-        self.barotr = self.barotr_rk2 if namelist.rk_barotr == 2 else self.barotr_rk3
-
         # initialize the fields
         initialize_test_velocity_field(momentum=self, test_case=namelist.case)
+        # 仅在初始化阶段执行一次：状态打包与 JIT 图编译
+        self.setup_barotropic_jit(namelist.rk_barotr)
