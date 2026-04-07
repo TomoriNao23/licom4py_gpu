@@ -18,6 +18,7 @@ import jax
 import jax.numpy as jnp
 from jax import jit
 from jax.sharding import PartitionSpec as P
+from jax.experimental.shard_map import shard_map
 
 # Local application imports
 from licom.mesh import Communication, GPU_Mesh, Cube
@@ -158,11 +159,62 @@ def _make_barotr_jit(core_fn, state, consts):
     def _sh(x):
         return getattr(x, 'sharding', None)
         
+    def _spec(x):
+        sh = _sh(x)
+        return sh.spec if sh is not None else P()
+        
+    state_specs = tuple(_spec(x) for x in state)
+    consts_specs = tuple(_spec(x) for x in consts)
+
     state_sh = tuple(_sh(x) for x in state)
     consts_sh = tuple(_sh(x) for x in consts)
 
+    from licom.mesh import GPU_Mesh
+    from licom.duogrid import Dg
+    from licom.mesh import Cube
+
+    def wrapper(s, c, nbb, dtb):
+        patch_keys = []
+        patch_vals = []
+        patch_specs = []
+        
+        # Collect dynamically bound arrays from singleton objects (Dg, Cube)
+        for obj in (Dg, Cube):
+            for k, v in vars(obj).items():
+                if hasattr(v, 'shape') and hasattr(v, 'sharding'):
+                    patch_keys.append((obj, k))
+                    patch_vals.append(v)
+                    sh = getattr(v, 'sharding', None)
+                    patch_specs.append(sh.spec if sh is not None else P())
+                    
+        patch_vals = tuple(patch_vals)
+        patch_specs = tuple(patch_specs)
+        
+        def map_fn(s_inner, c_inner, patch_inner):
+            old_vals = {}
+            # Temporary patch for mapped local tracers
+            for (obj, k), mapped_v in zip(patch_keys, patch_inner):
+                old_vals[(obj, k)] = getattr(obj, k)
+                setattr(obj, k, mapped_v)
+            
+            try:
+                return core_fn(s_inner, c_inner, nbb, dtb)
+            finally:
+                # Revert to global structures
+                for (obj, k), orig_v in old_vals.items():
+                    setattr(obj, k, orig_v)
+            
+        sharded_fn = shard_map(
+            map_fn,
+            mesh=GPU_Mesh.mesh,
+            in_specs=(state_specs, consts_specs, patch_specs),
+            out_specs=state_specs,
+            check_rep=False
+        )
+        return sharded_fn(s, c, patch_vals)
+
     return jit(
-        core_fn,
+        wrapper,
         static_argnums=(2, 3),
         in_shardings=(state_sh, consts_sh),
         out_shardings=state_sh,

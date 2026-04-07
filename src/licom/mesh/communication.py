@@ -136,11 +136,11 @@ class Communication:
         #   'addressable_devices_indices_map'
         # Sharding is instead propagated through the active Mesh context.
         cls._update_domain_jit = jit(
-            jax.vmap(cls._update_domain_single, axis_name="tile")
+            jax.vmap(cls._update_domain_single, axis_name="vtile")
         )
 
         cls._boundary_communication_jit = jit(
-            jax.vmap(cls._boundary_communication_single, axis_name="tile")
+            jax.vmap(cls._boundary_communication_single, axis_name="vtile")
         )
 
     # -------------------------------------------------
@@ -206,10 +206,19 @@ class Communication:
             cls._pack_edge(u, Topology.S),
         ])
         
-        # Gather all edges from all tiles. recv shape: (NTILE, 4, halo, n)
-        recv = lax.all_gather(send, "tile", tiled=False) 
+        recv_local = lax.all_gather(send, "vtile", tiled=False) 
         
-        tile_id = lax.axis_index("tile")
+        try:
+            recv_global = lax.all_gather(recv_local, "tile", tiled=False)
+            ax_tile = lax.axis_index("tile")
+        except NameError:
+            recv_global = recv_local[None, ...]
+            ax_tile = 0
+            
+        recv = recv_global.reshape((Topology.NTILE, 4, cls.halo, cls._n_pad))
+        
+        n_local = recv_local.shape[0]
+        tile_id = ax_tile * n_local + lax.axis_index("vtile")
         
         def process_dir(d):
             nb, dB, tid = cls._routing[tile_id, d]
@@ -264,9 +273,19 @@ class Communication:
             cls._pack_boundary_edge(u, v, Topology.S),
         ])
         
-        # Gather all edges from all tiles. recv shape: (NTILE, 4, halo, n)
-        recv = lax.all_gather(send, "tile", tiled=False)
-        tile_id = lax.axis_index("tile")
+        recv_local = lax.all_gather(send, "vtile", tiled=False)
+        
+        try:
+            recv_global = lax.all_gather(recv_local, "tile", tiled=False)
+            ax_tile = lax.axis_index("tile")
+        except NameError:
+            recv_global = recv_local[None, ...]
+            ax_tile = 0
+            
+        recv = recv_global.reshape((Topology.NTILE, 4, cls.halo, cls._n_pad))
+        
+        n_local = recv_local.shape[0]
+        tile_id = ax_tile * n_local + lax.axis_index("vtile")
         
         def process_dir(d):
             nb, dB, tid = cls._routing[tile_id, d]
