@@ -28,44 +28,7 @@ from licom.mesh.g2l import Global2Local
 from licom.duogrid import Dg
 from licom.operators import Remap
 from jax.sharding import NamedSharding
-
-def spherical_to_cubed_velocity_field(ubar: float, alpha:Optional[float] = 0.0) -> Tuple[Any, Any]:
-    """
-    Convert uniform spherical velocity field to cubed-sphere grid velocity field.
-    
-    This function implements the transformation:
-    lon = ocn%dg%a_pt(1,i,j)
-    lat = ocn%dg%a_pt(2,i,j)  
-    u_rll(1) = ubar * (cos(alpha)*cos(lat) + sin(alpha)*cos(lon)*sin(lat))
-    u_rll(2) = -ubar * sin(alpha)*sin(lon)
-    u_co2 = matmul(ocn%dg%a_l2c(:,:,i,j), u_rll)
-    
-    Args:
-        ubar: Magnitude of uniform velocity field
-        alpha: Angle of velocity field direction (in radians)
-        
-    Returns:
-        tuple: (u_cubed, v_cubed) - Velocity components in cubed-sphere coordinates
-    """
-    
-    # Extract longitude and latitude from duogrid
-    # a_pt has shape (ntile, ni, nj, 2) where [..., 0] is lon, [..., 1] is lat
-    lon = Dg.a_pt[..., 0]  # longitude
-    lat = Dg.a_pt[..., 1]  # latitude
-    
-    # Calculate spherical velocity components (lat-lon coordinates)
-    u_rll_lon = ubar * (jnp.cos(alpha) * jnp.cos(lat) + 
-                        jnp.sin(alpha) * jnp.cos(lon) * jnp.sin(lat))
-    u_rll_lat = -ubar * jnp.sin(alpha) * jnp.sin(lon)
-    
-    # Transform from lat-lon to cubed-sphere coordinates using transformation matrix
-    # a_l2c has shape (ntile, ni, nj, 2, 2)
-    u_cubed = (Dg.a_l2c[..., 0, 0] * u_rll_lon + 
-               Dg.a_l2c[..., 0, 1] * u_rll_lat)
-    v_cubed = (Dg.a_l2c[..., 1, 0] * u_rll_lon + 
-               Dg.a_l2c[..., 1, 1] * u_rll_lat)
-    
-    return u_cubed, v_cubed
+from jax.experimental.shard_map import shard_map
 
 @functools.partial(jit, 
                    static_argnames=("test_case",))
@@ -74,19 +37,45 @@ def initialize_test_velocity_field_jit(ub_in: Any, vb_in: Any, h0_in: Any, test_
     if test_case == 'w92case2':
         ubar = 1.0
         alpha = 0.0
-        ub, vb = spherical_to_cubed_velocity_field(ubar, alpha)
-        
         radius = 6.371e6
         omega = 7.292e-5
         grav = 9.80
 
-        lon = Dg.a_pt[..., 0]
-        lat = Dg.a_pt[..., 1]
-        h0 = -(radius*omega*ubar+ubar**2/2.) * (
-            (-jnp.cos(lon)*jnp.cos(lat)*jnp.sin(alpha)+jnp.sin(lat)*jnp.cos(alpha))**2 - 1.0/3.0
-        )/grav
-        
-        return ub, vb, h0
+        def map_fn(ub_loc, vb_loc, h0_loc, a_pt_loc, a_l2c_loc):
+            lon = a_pt_loc[..., 3:-3, 3:-3, 0]
+            lat = a_pt_loc[..., 3:-3, 3:-3, 1]
+            
+            u_rll_lon = ubar * (jnp.cos(alpha) * jnp.cos(lat) + 
+                                jnp.sin(alpha) * jnp.cos(lon) * jnp.sin(lat))
+            u_rll_lat = -ubar * jnp.sin(alpha) * jnp.sin(lon)
+            
+            a_l2c_int = a_l2c_loc[..., 3:-3, 3:-3, :, :]
+            u_cubed = (a_l2c_int[..., 0, 0] * u_rll_lon + 
+                       a_l2c_int[..., 0, 1] * u_rll_lat)
+            v_cubed = (a_l2c_int[..., 1, 0] * u_rll_lon + 
+                       a_l2c_int[..., 1, 1] * u_rll_lat)
+            
+            h0_int = -(radius*omega*ubar+ubar**2/2.) * (
+                (-jnp.cos(lon)*jnp.cos(lat)*jnp.sin(alpha)+jnp.sin(lat)*jnp.cos(alpha))**2 - 1.0/3.0
+            )/grav
+
+            ub_out = ub_loc.at[..., 3:-3, 3:-3].set(u_cubed)
+            vb_out = vb_loc.at[..., 3:-3, 3:-3].set(v_cubed)
+            h0_out = h0_loc.at[..., 3:-3, 3:-3].set(h0_int)
+            return ub_out, vb_out, h0_out
+
+        spec_2d = Global2Local.get_spec(ub_in.shape)
+        spec_pt = Global2Local.get_spec(Dg.a_pt.shape)
+        spec_l2c = Global2Local.get_spec(Dg.a_l2c.shape)
+
+        sharded_fn = shard_map(
+            map_fn,
+            mesh=GPU_Mesh.mesh,
+            in_specs=(spec_2d, spec_2d, spec_2d, spec_pt, spec_l2c),
+            out_specs=(spec_2d, spec_2d, spec_2d),
+            check_rep=False
+        )
+        return sharded_fn(ub_in, vb_in, h0_in, Dg.a_pt, Dg.a_l2c)
     else:
         return ub_in, vb_in, h0_in
 
