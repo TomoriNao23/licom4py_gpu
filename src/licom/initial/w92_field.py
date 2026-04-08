@@ -24,8 +24,10 @@ from jax.sharding import PartitionSpec as P
 
 # Local application imports
 from licom.mesh import Communication, Cube, GPU_Mesh
+from licom.mesh.g2l import Global2Local
 from licom.duogrid import Dg
 from licom.operators import Remap
+from jax.sharding import NamedSharding
 
 def spherical_to_cubed_velocity_field(ubar: float, alpha:Optional[float] = 0.0) -> Tuple[Any, Any]:
     """
@@ -98,8 +100,13 @@ def initialize_test_velocity_field(momentum = None, test_case: str = 'w92case2')
         momentum.vb = vb
         momentum.h0 = h0
 
-        momentum.h0 = Cube.ext_scalar(momentum.h0)
-        momentum.ub, momentum.vb = Cube.ext_vector(momentum.ub, momentum.vb)
+        sharding = NamedSharding(GPU_Mesh.mesh, Global2Local.get_spec(momentum.h0.shape))
+        
+        momentum.h0 = jax.device_put(Cube.ext_scalar(momentum.h0), sharding)
+        
+        ub_ext, vb_ext = Cube.ext_vector(momentum.ub, momentum.vb)
+        momentum.ub = jax.device_put(ub_ext, sharding)
+        momentum.vb = jax.device_put(vb_ext, sharding)
 
         # ubp, vbp, h0p
         momentum.ubp = momentum.ub

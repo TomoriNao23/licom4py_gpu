@@ -36,6 +36,8 @@ class Duogrid:
     halo: int = 3
     nx_local: int = 0
     ny_local: int = 0
+    px: int = 1
+    py: int = 1
 
     @classmethod
     def configure(cls, namelist, gpu_mesh) -> 'Duogrid':
@@ -43,6 +45,8 @@ class Duogrid:
         cls.halo = gpu_mesh.halo
         cls.nx_local = gpu_mesh.nx_local
         cls.ny_local = gpu_mesh.ny_local
+        cls.px = gpu_mesh.px
+        cls.py = gpu_mesh.py
 
         # 获取 NPZ 路径
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(
@@ -63,7 +67,8 @@ class Duogrid:
         cls._init_calculations()
         
         from licom.mesh import Cube
-        Cube.configure(cls.k2e_coef, cls.k2e_loc_i, cls.k2e_loc_j, cls.a_c2l, cls.a_l2c, cls.inner, cls.outer)
+        Cube.configure(cls.k2e_coef, cls.k2e_loc_i, cls.k2e_loc_j, cls.a_c2l, cls.a_l2c, cls.inner, cls.outer,
+                       cls.nx_local, cls.ny_local, cls.px, cls.py)
 
         print("Duogrid initialized successfully.")
         return cls
@@ -111,20 +116,27 @@ class Duogrid:
         inner = Global2Local.zeros('2d')
 
         from licom.mesh import GPU_Mesh
+        from jax.experimental.shard_map import shard_map
         with GPU_Mesh.mesh:
             ones_full = jnp.ones_like(inner)
             
             spec = Global2Local.get_spec(inner.shape)
-            sharding = NamedSharding(GPU_Mesh.mesh, spec)
             
             def _set_mask_logic(in_arr, out_arr):
                 h = cls.halo
-                in_arr = in_arr.at[:, h:-h, h:-h].set(1.0)
-                out_arr = out_arr.at[:, h:-h, h:-h].set(0.0)
+                in_arr = in_arr.at[..., h:-h, h:-h].set(1.0)
+                out_arr = out_arr.at[..., h:-h, h:-h].set(0.0)
                 return in_arr, out_arr
 
-            _logic_jit = jit(_set_mask_logic, in_shardings=(sharding, sharding), out_shardings=(sharding, sharding))
-            cls.inner, cls.outer = _logic_jit(inner, ones_full)
+            sharded_fn = shard_map(
+                _set_mask_logic,
+                mesh=GPU_Mesh.mesh,
+                in_specs=(spec, spec),
+                out_specs=(spec, spec),
+                check_rep=False
+            )
+            
+            cls.inner, cls.outer = jit(sharded_fn)(inner, ones_full)
 
     @classmethod
     def _ocean_depth(cls) -> None:
@@ -136,11 +148,10 @@ class Duogrid:
         vit_init = Global2Local.zeros('3d') 
 
         from licom.mesh import GPU_Mesh
+        from jax.experimental.shard_map import shard_map
         with GPU_Mesh.mesh:
             spec_2d = Global2Local.get_spec(dzph_init.shape)
             spec_3d = Global2Local.get_spec(vit_init.shape)
-            sharding_2d = NamedSharding(GPU_Mesh.mesh, spec_2d)
-            sharding_3d = NamedSharding(GPU_Mesh.mesh, spec_3d)
 
             def _init_depth_logic(dzph, kmt, vit):
                 # 将全场初始化为恒定值 (dzph=5600, kmt=30层, vit=1.0)
@@ -149,11 +160,15 @@ class Duogrid:
                 vit = vit.at[:].set(1.0)
                 return dzph, kmt, vit
 
-            _depth_jit = jit(_init_depth_logic, 
-                               in_shardings=(sharding_2d, sharding_2d, sharding_3d), 
-                               out_shardings=(sharding_2d, sharding_2d, sharding_3d))
+            sharded_fn = shard_map(
+                _init_depth_logic,
+                mesh=GPU_Mesh.mesh,
+                in_specs=(spec_2d, spec_2d, spec_3d),
+                out_specs=(spec_2d, spec_2d, spec_3d),
+                check_rep=False
+            )
             
-            cls.dzph, cls.kmt, cls.vit = _depth_jit(dzph_init, kmt_init, vit_init)
+            cls.dzph, cls.kmt, cls.vit = jit(sharded_fn)(dzph_init, kmt_init, vit_init)
         # B/C/D grid 的对应场由于在 stencil 计算中可能通过插值得到，这里按需补充
         cls.dzph_x = cls.dzph
         cls.dzph_y = cls.dzph

@@ -135,42 +135,43 @@ class Communication:
         #   AttributeError: 'UnspecifiedValue' object has no attribute
         #   'addressable_devices_indices_map'
         # Sharding is instead propagated through the active Mesh context.
-        cls._update_domain_jit = jit(
-            jax.vmap(cls._update_domain_single, axis_name="vtile")
-        )
-
-        cls._boundary_communication_jit = jit(
-            jax.vmap(cls._boundary_communication_single, axis_name="vtile")
-        )
+        pass
 
     # -------------------------------------------------
     # Shared Logic
     # -------------------------------------------------
     @classmethod
-    def _apply_transform(cls, data, recv_dir, tid):
+    def _apply_transform(cls, data, recv_dir, tid, nx_eval, ny_eval):
         """
         Unified data rotation/flip application layer.
         """
         is_ew = recv_dir in (Topology.E, Topology.W)
-        n = cls.ny_local if is_ew else cls.nx_local
-        raw = data[:, :n]
+        n = nx_eval if is_ew else ny_eval
+        raw = data[..., :, :n]
+        
+        # Make tid broadcastably compatible for batch arrays
+        if hasattr(tid, 'ndim') and tid.ndim > 0:
+            tid_mask = jnp.expand_dims(tid, axis=tuple(range(tid.ndim, raw.ndim)))
+        else:
+            tid_mask = tid
 
         if is_ew:
-            # Expected shape: (ny_local, halo)
+            # Expected shape: (..., ny_local, halo) or (ny_local, halo)
+            swapped = jnp.swapaxes(raw, -1, -2)
             return lax.cond(
                 tid == Topology.FLIP_I_TRANS,
-                lambda x: x.T[::-1, :],
-                lambda x: x.T,
-                raw
-            )
+                lambda x: jnp.flip(x, axis=-2),
+                lambda x: x,
+                swapped
+            ) if not hasattr(tid, 'ndim') or tid.ndim == 0 else jnp.where(tid_mask == Topology.FLIP_I_TRANS, jnp.flip(swapped, axis=-2), swapped)
         else:
-            # Expected shape: (halo, nx_local)
+            # Expected shape: (..., halo, nx_local) or (halo, nx_local)
             return lax.cond(
                 tid == Topology.FLIP_I_TRANS,
-                lambda x: x[:, ::-1],
+                lambda x: jnp.flip(x, axis=-1),
                 lambda x: x,
                 raw
-            )
+            ) if not hasattr(tid, 'ndim') or tid.ndim == 0 else jnp.where(tid_mask == Topology.FLIP_I_TRANS, jnp.flip(raw, axis=-1), raw)
 
     # -------------------------------------------------
     # Domain Update (Halo Exchange)
@@ -178,22 +179,67 @@ class Communication:
     @classmethod
     def _pack_edge(cls, u, d):
         """Extracts the boundary data to be sent based on the direction."""
-        h, n = cls.halo, cls._n_pad
+        h = cls.halo
+        nx = u.shape[-2] - 2 * h
+        ny = u.shape[-1] - 2 * h
+        n = max(nx, ny)
 
         if d == Topology.E:   
-            raw = u[h:-h, -2*h:-h].T
+            raw = jnp.swapaxes(u[..., h:-h, -2*h:-h], -1, -2)
         elif d == Topology.W: 
-            raw = u[h:-h, h:2*h].T
+            raw = jnp.swapaxes(u[..., h:-h, h:2*h], -1, -2)
         elif d == Topology.N: 
-            raw = u[-2*h:-h, h:-h]
+            raw = u[..., -2*h:-h, h:-h]
         else:                 
-            raw = u[h:2*h, h:-h]
+            raw = u[..., h:2*h, h:-h]
 
-        # [Optimization] Use jnp.pad instead of concatenate for better XLA compilation friendliness
-        cur = raw.shape[1]
+        cur = raw.shape[-1]
         if cur < n:
-            raw = jnp.pad(raw, ((0, 0), (0, n - cur)))
+            pad_width = [(0, 0)] * raw.ndim
+            pad_width[-1] = (0, n - cur)
+            raw = jnp.pad(raw, pad_width)
         return raw
+
+    @classmethod
+    def _gather_halo(cls, send):
+        """Universally pulls 4 boundary halos natively bounded by mesh index."""
+        try:
+            recv_x = lax.all_gather(send, "x", tiled=False)
+            recv_xy = lax.all_gather(recv_x, "y", tiled=False)
+            recv_global = lax.all_gather(recv_xy, "tile", tiled=False)
+            
+            py = recv_global.shape[1]
+            px = recv_global.shape[2]
+            
+            if send.ndim > 3:
+                # recv_global is (mesh_tile, py, px, 4, vtile, halo, n)
+                # Properly pull vtile (axis 4) out next to mesh_tile (axis 0)
+                recv = jnp.transpose(recv_global, (0, 4, 1, 2, 3, 5, 6)) # (mesh_tile, vtile, py, px, 4, halo, n)
+                
+                n_pad = send.shape[-1]
+                recv = recv.reshape((Topology.NTILE, py, px, 4, cls.halo, n_pad))
+                
+                mesh_t = lax.axis_index("tile")
+                vtile = send.shape[1]
+                t = mesh_t * vtile + jnp.arange(vtile)
+            else:
+                recv = recv_global
+                t = lax.axis_index("tile")
+                
+            x = lax.axis_index("x")
+            y = lax.axis_index("y")
+        except NameError:
+            py, px = 1, 1
+            if send.ndim > 3:
+                recv = jnp.swapaxes(send, 0, 1) # (vtile, 4, halo, n)
+                recv = jnp.expand_dims(recv, axis=(1, 2)) # (vtile, 1, 1, 4, halo, n)
+                t = jnp.arange(recv.shape[0])
+            else:
+                recv = jnp.expand_dims(send, axis=(0, 1, 2))
+                t = 0
+            x, y = 0, 0
+            
+        return recv, t, x, y, px, py
 
     @classmethod
     def _update_domain_single(cls, u):
@@ -206,29 +252,50 @@ class Communication:
             cls._pack_edge(u, Topology.S),
         ])
         
-        recv_local = lax.all_gather(send, "vtile", tiled=False) 
-        
-        try:
-            recv_global = lax.all_gather(recv_local, "tile", tiled=False)
-            ax_tile = lax.axis_index("tile")
-        except NameError:
-            recv_global = recv_local[None, ...]
-            ax_tile = 0
-            
-        recv = recv_global.reshape((Topology.NTILE, 4, cls.halo, cls._n_pad))
-        
-        n_local = recv_local.shape[0]
-        tile_id = ax_tile * n_local + lax.axis_index("vtile")
-        
+        recv, t, x, y, px, py = cls._gather_halo(send)
+
         def process_dir(d):
-            nb, dB, tid = cls._routing[tile_id, d]
-            return cls._apply_transform(recv[nb, dB], d, tid)
+            nb = cls._routing[t, d, 0]
+            dB = cls._routing[t, d, 1]
+            tid_ext = cls._routing[t, d, 2]
+            
+            is_EW = jnp.logical_or(d == Topology.E, d == Topology.W)
+            my_idx = jnp.where(is_EW, y, x)
+            
+            idx_b_flip = jnp.where(dB <= 1, (py - 1) - my_idx, (px - 1) - my_idx)
+            idx_b = jnp.where(tid_ext == Topology.FLIP_I_TRANS, idx_b_flip, my_idx)
+            
+            x_b_ext = jnp.where(dB == Topology.W, 0, jnp.where(dB == Topology.E, px - 1, idx_b))
+            y_b_ext = jnp.where(dB == Topology.S, 0, jnp.where(dB == Topology.N, py - 1, idx_b))
+            
+            if d == Topology.E:
+                is_internal = x < px - 1
+                int_x_b, int_y_b, int_d_b = x + 1, y, Topology.W
+            elif d == Topology.W:
+                is_internal = x > 0
+                int_x_b, int_y_b, int_d_b = x - 1, y, Topology.E
+            elif d == Topology.N:
+                is_internal = y < py - 1
+                int_x_b, int_y_b, int_d_b = x, y + 1, Topology.S
+            else:
+                is_internal = y > 0
+                int_x_b, int_y_b, int_d_b = x, y - 1, Topology.N
+                
+            t_b = jnp.where(is_internal, t, nb)
+            x_b = jnp.where(is_internal, int_x_b, x_b_ext)
+            y_b = jnp.where(is_internal, int_y_b, y_b_ext)
+            d_b = jnp.where(is_internal, int_d_b, dB)
+            tid = jnp.where(is_internal, Topology.ID, tid_ext)
+            
+            nx_eval = u.shape[-2] - 2 * cls.halo
+            ny_eval = u.shape[-1] - 2 * cls.halo
+            return cls._apply_transform(recv[t_b, y_b, x_b, d_b], d, tid, nx_eval, ny_eval)
 
         h = cls.halo
-        u = u.at[h:-h, -h:].set(process_dir(Topology.E))
-        u = u.at[h:-h, :h].set(process_dir(Topology.W))
-        u = u.at[-h:, h:-h].set(process_dir(Topology.N))
-        u = u.at[:h, h:-h].set(process_dir(Topology.S))
+        u = u.at[..., h:-h, -h:].set(process_dir(Topology.E))
+        u = u.at[..., h:-h, :h].set(process_dir(Topology.W))
+        u = u.at[..., -h:, h:-h].set(process_dir(Topology.N))
+        u = u.at[..., :h, h:-h].set(process_dir(Topology.S))
         
         return u
 
@@ -236,7 +303,7 @@ class Communication:
     def update_domain(cls, u):
         """Public API to trigger domain update within the defined Mesh."""
         with cls.mesh:
-            return cls._update_domain_jit(u)
+            return cls._update_domain_single(u)
 
     # -------------------------------------------------
     # C-Grid Boundary Edge Synchronization
@@ -244,23 +311,30 @@ class Communication:
     @classmethod
     def _pack_boundary_edge(cls, u, v, d):
         """Extracts boundary lines for U/V vector fields based on direction."""
-        h, n = cls.halo, cls._n_pad
+        h = cls.halo
+        nx = u.shape[-2] - 2 * h
+        ny = u.shape[-1] - 2 * h
+        n = max(nx, ny)
 
         if d == Topology.E:   
-            line = v[h:-h, cls.IDX_E]
+            line = v[..., h:-h, cls.IDX_E]
         elif d == Topology.W: 
-            line = v[h:-h, cls.IDX_W]
+            line = v[..., h:-h, cls.IDX_W]
         elif d == Topology.N: 
-            line = u[cls.IDX_N, h:-h]
+            line = u[..., cls.IDX_N, h:-h]
         else:                 
-            line = u[cls.IDX_S, h:-h]
+            line = u[..., cls.IDX_S, h:-h]
 
-        raw = jnp.zeros((h, len(line)), dtype=u.dtype).at[0, :].set(line)
+        line = jnp.expand_dims(line, -2)
+        pad_h = [(0, 0)] * line.ndim
+        pad_h[-2] = (0, h - 1)
+        raw = jnp.pad(line, pad_h)
 
-        # [Optimization] Use jnp.pad instead of concatenate
-        cur = raw.shape[1]
+        cur = raw.shape[-1]
         if cur < n:
-            raw = jnp.pad(raw, ((0, 0), (0, n - cur)))
+            pad_width = [(0, 0)] * raw.ndim
+            pad_width[-1] = (0, n - cur)
+            raw = jnp.pad(raw, pad_width)
         return raw
 
     @classmethod
@@ -273,41 +347,62 @@ class Communication:
             cls._pack_boundary_edge(u, v, Topology.S),
         ])
         
-        recv_local = lax.all_gather(send, "vtile", tiled=False)
-        
-        try:
-            recv_global = lax.all_gather(recv_local, "tile", tiled=False)
-            ax_tile = lax.axis_index("tile")
-        except NameError:
-            recv_global = recv_local[None, ...]
-            ax_tile = 0
+        recv, t, x, y, px, py = cls._gather_halo(send)
             
-        recv = recv_global.reshape((Topology.NTILE, 4, cls.halo, cls._n_pad))
-        
-        n_local = recv_local.shape[0]
-        tile_id = ax_tile * n_local + lax.axis_index("vtile")
-        
         def process_dir(d):
-            nb, dB, tid = cls._routing[tile_id, d]
-            return cls._apply_transform(recv[nb, dB], d, tid)
+            nb = cls._routing[t, d, 0]
+            dB = cls._routing[t, d, 1]
+            tid_ext = cls._routing[t, d, 2]
+            
+            is_EW = jnp.logical_or(d == Topology.E, d == Topology.W)
+            my_idx = jnp.where(is_EW, y, x)
+            
+            idx_b_flip = jnp.where(dB <= 1, (py - 1) - my_idx, (px - 1) - my_idx)
+            idx_b = jnp.where(tid_ext == Topology.FLIP_I_TRANS, idx_b_flip, my_idx)
+            
+            x_b_ext = jnp.where(dB == Topology.W, 0, jnp.where(dB == Topology.E, px - 1, idx_b))
+            y_b_ext = jnp.where(dB == Topology.S, 0, jnp.where(dB == Topology.N, py - 1, idx_b))
+            
+            if d == Topology.E:
+                is_internal = x < px - 1
+                int_x_b, int_y_b, int_d_b = x + 1, y, Topology.W
+            elif d == Topology.W:
+                is_internal = x > 0
+                int_x_b, int_y_b, int_d_b = x - 1, y, Topology.E
+            elif d == Topology.N:
+                is_internal = y < py - 1
+                int_x_b, int_y_b, int_d_b = x, y + 1, Topology.S
+            else:
+                is_internal = y > 0
+                int_x_b, int_y_b, int_d_b = x, y - 1, Topology.N
+                
+            t_b = jnp.where(is_internal, t, nb)
+            x_b = jnp.where(is_internal, int_x_b, x_b_ext)
+            y_b = jnp.where(is_internal, int_y_b, y_b_ext)
+            d_b = jnp.where(is_internal, int_d_b, dB)
+            tid = jnp.where(is_internal, Topology.ID, tid_ext)
+            
+            nx_eval = u.shape[-2] - 2 * cls.halo
+            ny_eval = u.shape[-1] - 2 * cls.halo
+            return cls._apply_transform(recv[t_b, y_b, x_b, d_b], d, tid, nx_eval, ny_eval)
 
         h = cls.halo
         
         arr_E = process_dir(Topology.E)
-        val_E = ((v[h:-h, cls.IDX_E] + arr_E[:, 0]) / 2.0).astype(v.dtype)
-        v = v.at[h:-h, cls.IDX_E].set(val_E)
+        val_E = ((v[..., h:-h, cls.IDX_E] + arr_E[..., :, 0]) / 2.0).astype(v.dtype)
+        v = lax.cond(x == px - 1, lambda val: val.at[..., h:-h, cls.IDX_E].set(val_E), lambda val: val, v)
         
         arr_W = process_dir(Topology.W)
-        val_W = ((v[h:-h, cls.IDX_W] + arr_W[:, 0]) / 2.0).astype(v.dtype)
-        v = v.at[h:-h, cls.IDX_W].set(val_W)
+        val_W = ((v[..., h:-h, cls.IDX_W] + arr_W[..., :, 0]) / 2.0).astype(v.dtype)
+        v = lax.cond(x == 0, lambda val: val.at[..., h:-h, cls.IDX_W].set(val_W), lambda val: val, v)
         
         arr_N = process_dir(Topology.N)
-        val_N = ((u[cls.IDX_N, h:-h] + arr_N[0, :]) / 2.0).astype(u.dtype)
-        u = u.at[cls.IDX_N, h:-h].set(val_N)
+        val_N = ((u[..., cls.IDX_N, h:-h] + arr_N[..., 0, :]) / 2.0).astype(u.dtype)
+        u = lax.cond(y == py - 1, lambda val: val.at[..., cls.IDX_N, h:-h].set(val_N), lambda val: val, u)
         
         arr_S = process_dir(Topology.S)
-        val_S = ((u[cls.IDX_S, h:-h] + arr_S[0, :]) / 2.0).astype(u.dtype)
-        u = u.at[cls.IDX_S, h:-h].set(val_S)
+        val_S = ((u[..., cls.IDX_S, h:-h] + arr_S[..., 0, :]) / 2.0).astype(u.dtype)
+        u = lax.cond(y == 0, lambda val: val.at[..., cls.IDX_S, h:-h].set(val_S), lambda val: val, u)
         
         return u, v
 
@@ -315,7 +410,7 @@ class Communication:
     def boundary_communication(cls, u, v):
         """Public API to trigger boundary synchronization within the defined Mesh."""
         with cls.mesh:
-            return cls._boundary_communication_jit(u, v)
+            return cls._boundary_communication_single(u, v)
     
     # -------------------------------------------------
     # Print Scheduling Info

@@ -64,7 +64,7 @@ class Global2Local:
             # nx_local 是不含 halo 的 local 宽度；
             # 带 halo 的数组其空间维 size 必然大于 nx_local。
             if shape[i] >= cls.nx_local and found_spatial < 2:
-                spec_list[i] = "x" if found_spatial == 0 else "y"
+                spec_list[i] = "y" if found_spatial == 0 else "x"
                 found_spatial += 1
 
         return P(*spec_list)
@@ -82,29 +82,29 @@ class Global2Local:
         if len(spatial_axes) != 2:
             return jax.device_put(global_data, NamedSharding(cls.mesh, spec))
 
-        x_axis, y_axis = spatial_axes
+        axis_1, axis_2 = spatial_axes
         nx_h = cls.nx_local + 2 * h
         ny_h = cls.ny_local + 2 * h
         px = cls.mesh.shape["x"]
         py = cls.mesh.shape["y"]
 
         target_shape = list(global_data.shape)
-        target_shape[x_axis] = px * nx_h
-        target_shape[y_axis] = py * ny_h
+        target_shape[axis_1] = py * nx_h
+        target_shape[axis_2] = px * ny_h
         target_shape = tuple(target_shape)
 
         sharding = NamedSharding(cls.mesh, spec)
 
         def slice_fn(idx):
             slc = list(idx)
-            x_start = 0 if slc[x_axis].start is None else slc[x_axis].start
-            y_start = 0 if slc[y_axis].start is None else slc[y_axis].start
+            start_1 = 0 if slc[axis_1].start is None else slc[axis_1].start
+            start_2 = 0 if slc[axis_2].start is None else slc[axis_2].start
 
-            ix = x_start // nx_h
-            iy = y_start // ny_h
+            iy = start_1 // nx_h
+            ix = start_2 // ny_h
 
-            slc[x_axis] = slice(ix * cls.nx_local, ix * cls.nx_local + nx_h)
-            slc[y_axis] = slice(iy * cls.ny_local, iy * cls.ny_local + ny_h)
+            slc[axis_1] = slice(iy * cls.nx_local, iy * cls.nx_local + nx_h)
+            slc[axis_2] = slice(ix * cls.ny_local, ix * cls.ny_local + ny_h)
             return global_data[tuple(slc)]
 
         return jax.make_array_from_callback(target_shape, sharding, slice_fn)
