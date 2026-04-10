@@ -4,6 +4,8 @@
 
 lib/lib/libfms_unified.dylib
 lib/lib/libfms_unified.so
+lib/libduogrid_coordinate.dylib
+lib/libduogrid_coordinate.so
 
 
 # Fortran compiled files

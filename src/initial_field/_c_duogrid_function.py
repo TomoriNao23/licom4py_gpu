@@ -25,7 +25,7 @@ def _libc():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.join(current_dir, "..", "..")
     project_root = os.path.abspath(project_root)
-    lib_dir = os.path.join(project_root, "lib", "lib")
+    lib_dir = os.path.join(project_root, "lib")
     so_path = os.path.join(lib_dir, "libduogrid_coordinate.so")
     dylib_path = os.path.join(lib_dir, "libduogrid_coordinate.dylib")
     if os.path.exists(so_path):
