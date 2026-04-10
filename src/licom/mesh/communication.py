@@ -141,12 +141,14 @@ class Communication:
     # Shared Logic
     # -------------------------------------------------
     @classmethod
-    def _apply_transform(cls, data, recv_dir, tid, nx_eval, ny_eval):
+    def _apply_transform(cls, data, recv_dir, tid, nx_eval, ny_eval, full=False):
         """
         Unified data rotation/flip application layer.
         """
         is_ew = recv_dir in (Topology.E, Topology.W)
         n = nx_eval if is_ew else ny_eval
+        if full:
+            n += 2 * cls.halo
         raw = data[..., :, :n]
         
         # Make tid broadcastably compatible for batch arrays
@@ -177,21 +179,23 @@ class Communication:
     # Domain Update (Halo Exchange)
     # -------------------------------------------------
     @classmethod
-    def _pack_edge(cls, u, d):
+    def _pack_edge(cls, u, d, full=False):
         """Extracts the boundary data to be sent based on the direction."""
         h = cls.halo
         nx = u.shape[-2] - 2 * h
         ny = u.shape[-1] - 2 * h
         n = max(nx, ny)
+        if full:
+            n += 2 * h
 
         if d == Topology.E:   
-            raw = jnp.swapaxes(u[..., h:-h, -2*h:-h], -1, -2)
+            raw = jnp.swapaxes(u[..., :, -2*h:-h] if full else u[..., h:-h, -2*h:-h], -1, -2)
         elif d == Topology.W: 
-            raw = jnp.swapaxes(u[..., h:-h, h:2*h], -1, -2)
+            raw = jnp.swapaxes(u[..., :, h:2*h] if full else u[..., h:-h, h:2*h], -1, -2)
         elif d == Topology.N: 
-            raw = u[..., -2*h:-h, h:-h]
+            raw = u[..., -2*h:-h, :] if full else u[..., -2*h:-h, h:-h]
         else:                 
-            raw = u[..., h:2*h, h:-h]
+            raw = u[..., h:2*h, :] if full else u[..., h:2*h, h:-h]
 
         cur = raw.shape[-1]
         if cur < n:
@@ -243,18 +247,11 @@ class Communication:
 
     @classmethod
     def _update_domain_single(cls, u):
-        """Applies single-round boundary exchange using all_gather."""
-        # Pack all 4 edges into an array of shape (4, halo, n)
-        send = jnp.stack([
-            cls._pack_edge(u, Topology.E),
-            cls._pack_edge(u, Topology.W),
-            cls._pack_edge(u, Topology.N),
-            cls._pack_edge(u, Topology.S),
-        ])
-        
-        recv, t, x, y, px, py = cls._gather_halo(send)
+        """Applies boundary exchange using all_gather (2-pass to correctly sync diagonal corners)."""
+        h = cls.halo
 
-        def process_dir(d):
+
+        def process_dir(u_curr, recv, t, x, y, px, py, d, full):
             nb = cls._routing[t, d, 0]
             dB = cls._routing[t, d, 1]
             tid_ext = cls._routing[t, d, 2]
@@ -287,15 +284,54 @@ class Communication:
             d_b = jnp.where(is_internal, int_d_b, dB)
             tid = jnp.where(is_internal, Topology.ID, tid_ext)
             
-            nx_eval = u.shape[-2] - 2 * cls.halo
-            ny_eval = u.shape[-1] - 2 * cls.halo
-            return cls._apply_transform(recv[t_b, y_b, x_b, d_b], d, tid, nx_eval, ny_eval)
+            nx_eval = u_curr.shape[-2] - 2 * cls.halo
+            ny_eval = u_curr.shape[-1] - 2 * cls.halo
+            return cls._apply_transform(recv[t_b, y_b, x_b, d_b], d, tid, nx_eval, ny_eval, full)
 
-        h = cls.halo
-        u = u.at[..., h:-h, -h:].set(process_dir(Topology.E))
-        u = u.at[..., h:-h, :h].set(process_dir(Topology.W))
-        u = u.at[..., -h:, h:-h].set(process_dir(Topology.N))
-        u = u.at[..., :h, h:-h].set(process_dir(Topology.S))
+        def run_pass(u_curr, pass_type, dirs_to_update, full):
+            send = jnp.stack([
+                cls._pack_edge(u_curr, Topology.E, full),
+                cls._pack_edge(u_curr, Topology.W, full),
+                cls._pack_edge(u_curr, Topology.N, full),
+                cls._pack_edge(u_curr, Topology.S, full),
+            ])
+            recv, t, x, y, px, py = cls._gather_halo(send)
+            
+            res = u_curr
+            for d in dirs_to_update:
+                if d == Topology.E:
+                    is_internal = x < px - 1
+                    tgt_slice = jnp.s_[..., :, -h:] if full else jnp.s_[..., h:-h, -h:]
+                elif d == Topology.W:
+                    is_internal = x > 0
+                    tgt_slice = jnp.s_[..., :, :h] if full else jnp.s_[..., h:-h, :h]
+                elif d == Topology.N:
+                    is_internal = y < py - 1
+                    tgt_slice = jnp.s_[..., -h:, :] if full else jnp.s_[..., -h:, h:-h]
+                else:
+                    is_internal = y > 0
+                    tgt_slice = jnp.s_[..., :h, :] if full else jnp.s_[..., :h, h:-h]
+
+                mask = jnp.logical_not(is_internal) if pass_type == 'GLOBAL' else is_internal
+                
+                # Use a closure factory to properly isolate 'd' and 'tgt_slice' during trace loop
+                def make_branch(d_val, slice_val):
+                    return lambda r: r.at[slice_val].set(process_dir(u_curr, recv, t, x, y, px, py, d_val, full))
+                    
+                res = lax.cond(
+                    mask,
+                    make_branch(d, tgt_slice),
+                    lambda r: r,
+                    res
+                )
+            return res
+
+        # Pass 1: Global boundaries (updates cross-tile edge halos, omitting diagonal corners)
+        u = run_pass(u, 'GLOBAL', (Topology.E, Topology.W, Topology.N, Topology.S), full=False)
+        # Pass 2: Local EW (updates X-axis halos for sub-tiles within a mesh tile, using full wide edge to sweep new global data)
+        u = run_pass(u, 'LOCAL', (Topology.E, Topology.W), full=True)
+        # Pass 3: Local NS (final sweep updating Y-axis halos including newly populated corners)
+        u = run_pass(u, 'LOCAL', (Topology.N, Topology.S), full=True)
         
         return u
 
@@ -384,7 +420,7 @@ class Communication:
             
             nx_eval = u.shape[-2] - 2 * cls.halo
             ny_eval = u.shape[-1] - 2 * cls.halo
-            return cls._apply_transform(recv[t_b, y_b, x_b, d_b], d, tid, nx_eval, ny_eval)
+            return cls._apply_transform(recv[t_b, y_b, x_b, d_b], d, tid, nx_eval, ny_eval, full=False)
 
         h = cls.halo
         

@@ -81,30 +81,36 @@ def initialize_test_velocity_field_jit(ub_in: Any, vb_in: Any, h0_in: Any, test_
 
 def initialize_test_velocity_field(momentum = None, test_case: str = 'w92case2') -> None:
     """Initialize test velocity fields using JIT for sharding safety."""
-    if momentum is not None:
-        with GPU_Mesh.mesh:
-            ub, vb, h0 = initialize_test_velocity_field_jit(momentum.ub, momentum.vb, momentum.h0, test_case)
-        # 直接用返回结果替换字段，避免形状 / sharding 广播问题
-        momentum.ub = ub
-        momentum.vb = vb
-        momentum.h0 = h0
+    with GPU_Mesh.mesh:
+        momentum.ub, momentum.vb, momentum.h0 = initialize_test_velocity_field_jit(momentum.ub, momentum.vb, momentum.h0, test_case)
 
-        sharding = NamedSharding(GPU_Mesh.mesh, Global2Local.get_spec(momentum.h0.shape))
+        from licom.mesh.spmd import make_spmd_jit
         
-        momentum.h0 = jax.device_put(Cube.ext_scalar(momentum.h0), sharding)
+        def _scalar_core(state, consts):
+            h0, = state
+            return (Cube.ext_scalar(h0),)
+            
+        def _vector_core(state, consts):
+            u, v = state
+            return Cube.ext_vector(u, v)
+
+        ext_scalar_spmd = make_spmd_jit(_scalar_core, (momentum.h0,), (), static_argnums=())
+        ext_vector_spmd = make_spmd_jit(_vector_core, (momentum.ub, momentum.vb), (), static_argnums=())
         
-        ub_ext, vb_ext = Cube.ext_vector(momentum.ub, momentum.vb)
-        momentum.ub = jax.device_put(ub_ext, sharding)
-        momentum.vb = jax.device_put(vb_ext, sharding)
+        momentum.h0, = ext_scalar_spmd((momentum.h0,), ())
+        momentum.ub, momentum.vb = ext_vector_spmd((momentum.ub, momentum.vb), ())
 
-        # ubp, vbp, h0p
-        momentum.ubp = momentum.ub
-        momentum.vbp = momentum.vb
-        momentum.h0p = momentum.h0
+    # ubp, vbp, h0p
+    momentum.ubp = momentum.ub
+    momentum.vbp = momentum.vb
+    momentum.h0p = momentum.h0
 
-        ub_ct, vb_ct, ub_cx, ub_cy, vb_cx, vb_cy = Remap.vector_trans_2d(ub, vb)
-        print(ub[0,2,3],vb[0,2,3],ub_ct[0,2,3],vb_ct[0,2,3],ub_cx[0,2,3],ub_cy[0,2,3],vb_cx[0,2,3],vb_cy[0,2,3])
-        # 手动重算 ub_ct[0,2,3]：(a_gct[0,0]*ub + a_gct[0,1]*vb) * a_sina
+    # print("debug h0 4 56 98:", momentum.h0[4, 56, 98])
+    # print(momentum.h0[0,2,48],momentum.h0[0,2,49], momentum.h0[0,2,50])
+    # print(momentum.h0[0,2,48+3], momentum.h0[0,2,49+3],momentum.h0[0,2,50+3])
+    # print(momentum.h0[0,2,48+6], momentum.h0[0,2,49+6],momentum.h0[0,2,50+6])
+    # print(momentum.h0[0,2,48+9], momentum.h0[0,2,49+9],momentum.h0[0,2,50+9])
+    # print(momentum.h0[0,2,0:6], momentum.h0[0,2,-6:])
+    # print(momentum.h0[0,2,48:51], momentum.h0[0,2,51:54])
+    # print(momentum.h0[0,2,54:57], momentum.h0[0,2,57:60])
 
-    else:
-        raise ValueError(f"Unknown test case: {test_case}")

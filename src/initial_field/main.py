@@ -102,6 +102,8 @@ def generate(nx: int, px: int, py: int, full: bool = False):
         isd=mp.isd, ied=mp.ied, jsd=mp.jsd, jed=mp.jed, grid_type=0
     )
 
+    print(mp.nx,mp.tile,mp.isd,mp.ied,mp.jsd,mp.jed)
+
     # Get local data
     a = get_all_a_grid(mp.isd, mp.ied, mp.jsd, mp.jed)
     bcd = get_all_bc_d_grid(mp.isd, mp.ied, mp.jsd, mp.jed)
