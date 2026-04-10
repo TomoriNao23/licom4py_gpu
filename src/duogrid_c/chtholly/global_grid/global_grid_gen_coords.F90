@@ -10,7 +10,7 @@
 module global_grid_gen_coords_mod
 
     !------ fms modules
-    use constants_mod,          only: pi=>pi_8
+    use lib_grid_mod,           only: pi
     !------ AC modules
     use global_grid_data_mod,   only: global_grid_type
     use lib_grid_mod,           only: R_GRID

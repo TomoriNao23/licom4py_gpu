@@ -11,13 +11,16 @@ module lib_grid_mod
 
     !------ fms modules
     use platform_mod,       only: r8_kind
-    use constants_mod,      only: pi=>pi_8, GRAV, OMEGA
+    !------ AC modules
     !------ AC modules
     implicit none
     private
 
     integer, parameter :: R_GRID = r8_kind
     real(kind=R_GRID), parameter :: RADIUS = 6.3712d+6 !< Radius of the Earth [m]
+    real(kind=R_GRID), parameter :: pi = 3.14159265358979323846_r8_kind
+    real(kind=R_GRID), parameter :: GRAV = 9.80_r8_kind
+    real(kind=R_GRID), parameter :: OMEGA = 7.292e-5_r8_kind
 
     real, parameter :: M12vm = 7./12.
     real, parameter :: M22vm = -1./12.

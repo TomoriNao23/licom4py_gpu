@@ -91,145 +91,13 @@ else()
   set(MPI_FOUND FALSE)
 endif()
 
-# Prefer finding netCDF via nc-config/nf-config when available
-find_program(NC_CONFIG_EXECUTABLE NAMES nc-config)
-if(NC_CONFIG_EXECUTABLE)
-  execute_process(COMMAND ${NC_CONFIG_EXECUTABLE} --includedir OUTPUT_VARIABLE NC_CONFIG_INCLUDE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
-  execute_process(COMMAND ${NC_CONFIG_EXECUTABLE} --libdir OUTPUT_VARIABLE NC_CONFIG_LIBRARY_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
-  execute_process(COMMAND ${NC_CONFIG_EXECUTABLE} --libs OUTPUT_VARIABLE NC_CONFIG_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE)
-  if(NC_CONFIG_INCLUDE_DIR AND NC_CONFIG_LIBRARY_DIR)
-    set(NETCDF_INCLUDE_DIRS ${NC_CONFIG_INCLUDE_DIR})
-    set(NETCDF_LIBRARY_DIRS ${NC_CONFIG_LIBRARY_DIR})
-    if(NOT NETCDF_LIBRARIES)
-      set(NETCDF_LIBRARIES netcdf)
-    endif()
-    set(NETCDF_FOUND TRUE)
-  endif()
-  if(NC_CONFIG_LIBS)
-    separate_arguments(NC_CONFIG_LIBS)
-    set(NETCDF_LINK_FLAGS ${NC_CONFIG_LIBS})
-  endif()
-endif()
-
-find_program(NF_CONFIG_EXECUTABLE NAMES nf-config)
-if(NF_CONFIG_EXECUTABLE)
-  execute_process(
-    COMMAND ${NF_CONFIG_EXECUTABLE} --includedir
-    OUTPUT_VARIABLE NF_CONFIG_INCLUDE_DIR
-    RESULT_VARIABLE NF_CONFIG_INC_STATUS
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
-  if(NF_CONFIG_INC_STATUS EQUAL 0 AND NF_CONFIG_INCLUDE_DIR)
-    set(NETCDFF_INCLUDE_DIRS ${NF_CONFIG_INCLUDE_DIR})
-  endif()
-  execute_process(
-    COMMAND ${NF_CONFIG_EXECUTABLE} --flibs
-    OUTPUT_VARIABLE NF_CONFIG_FLIBS
-    RESULT_VARIABLE NF_CONFIG_FLIBS_STATUS
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
-  if(NF_CONFIG_FLIBS_STATUS EQUAL 0 AND NF_CONFIG_FLIBS)
-    separate_arguments(NF_CONFIG_FLIBS)
-    set(NETCDFF_LINK_FLAGS ${NF_CONFIG_FLIBS})
-    set(NETCDFF_FOUND TRUE)
-  endif()
-endif()
-
-# Check netCDF - use more permissive checking
-if(NOT NETCDF_FOUND)
-  find_package(PkgConfig)
-  if(PKG_CONFIG_FOUND)
-    pkg_check_modules(NETCDF netcdf)
-    pkg_check_modules(NETCDFF netcdf-fortran)
-  endif()
-endif()
-
-# Allow manual specification via NETCDF_DIR / env
-if(NOT NETCDF_FOUND)
-  if(NETCDF_DIR)
-    set(NETCDF_INCLUDE_DIRS "${NETCDF_DIR}/include")
-    set(NETCDF_LIBRARY_DIRS "${NETCDF_DIR}/lib")
-    if(NOT NETCDF_LIBRARIES)
-      set(NETCDF_LIBRARIES netcdf)
-    endif()
-    set(NETCDF_FOUND TRUE)
-    message(STATUS "Using NETCDF_DIR: ${NETCDF_DIR}")
-  elseif(DEFINED ENV{NETCDF_DIR})
-    set(NETCDF_INCLUDE_DIRS "$ENV{NETCDF_DIR}/include")
-    set(NETCDF_LIBRARY_DIRS "$ENV{NETCDF_DIR}/lib")
-    if(NOT NETCDF_LIBRARIES)
-      set(NETCDF_LIBRARIES netcdf)
-    endif()
-    set(NETCDF_FOUND TRUE)
-    message(STATUS "Using NETCDF_DIR from env: $ENV{NETCDF_DIR}")
-  endif()
-endif()
-
-# Allow manual specification via NETCDF_FORTRAN_DIR / env
-if(NOT NETCDFF_FOUND)
-  if(NETCDF_FORTRAN_DIR)
-    set(NETCDFF_INCLUDE_DIRS "${NETCDF_FORTRAN_DIR}/include")
-    set(NETCDFF_LIBRARY_DIRS "${NETCDF_FORTRAN_DIR}/lib")
-    if(NOT NETCDFF_LIBRARIES)
-      set(NETCDFF_LIBRARIES netcdff)
-    endif()
-    set(NETCDFF_FOUND TRUE)
-    message(STATUS "Using NETCDF_FORTRAN_DIR: ${NETCDF_FORTRAN_DIR}")
-  elseif(DEFINED ENV{NETCDF_FORTRAN_DIR})
-    set(NETCDFF_INCLUDE_DIRS "$ENV{NETCDF_FORTRAN_DIR}/include")
-    set(NETCDFF_LIBRARY_DIRS "$ENV{NETCDF_FORTRAN_DIR}/lib")
-    if(NOT NETCDFF_LIBRARIES)
-      set(NETCDFF_LIBRARIES netcdff)
-    endif()
-    set(NETCDFF_FOUND TRUE)
-    message(STATUS "Using NETCDF_FORTRAN_DIR from env: $ENV{NETCDF_FORTRAN_DIR}")
-  endif()
-endif()
-
-# Force set netCDF library paths (based on pkg-config output)
-if(APPLE AND NOT PKG_CONFIG_FOUND)
-  set(NETCDF_LIBRARY_DIRS "/opt/homebrew/Cellar/netcdf-fortran/4.6.2/lib;/opt/homebrew/Cellar/netcdf/4.9.3/lib")
-  set(NETCDF_LIBRARIES "netcdff;netcdf")
-  set(NETCDFF_LIBRARIES "netcdff")
-  set(NETCDF_FOUND TRUE)
-  set(NETCDFF_FOUND TRUE)
-  message(STATUS "Using hardcoded netCDF paths for macOS")
-endif()
-
-if(NOT NETCDFF_FOUND)
-  message(FATAL_ERROR "netCDF Fortran library not found, aborting build.")
-endif()
-
-if(NETCDF_FOUND)
-  message(STATUS "netCDF C: ${NETCDF_LIBRARIES}")
-endif()
-if(NETCDFF_FOUND)
-  message(STATUS "netCDF Fortran: ${NETCDFF_LIBRARIES}")
-endif()
 
 # Set include directories
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/mpp/include)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/fms)
-if(NETCDF_FOUND)
-  include_directories(${NETCDF_INCLUDE_DIRS})
-endif()
-if(NETCDFF_FOUND)
-  include_directories(${NETCDFF_INCLUDE_DIRS})
-endif()
 
-# Set link directories
-if(NETCDF_FOUND)
-  link_directories(${NETCDF_LIBRARY_DIRS})
-endif()
-if(NETCDFF_FOUND)
-  link_directories(${NETCDFF_LIBRARY_DIRS})
-endif()
 
 # Define preprocessor macros - use conditional definitions
 if(MPI_FOUND)
   add_definitions(-Duse_libMPI)
-endif()
-if(NETCDF_FOUND)
-  add_definitions(-Duse_netCDF)
 endif()
 
 # Detect operating system
@@ -253,15 +121,11 @@ endif()
 # Fortran module output directory is already set above
 
 # Create unified FMS library
-add_library(fms_unified SHARED)
+add_library(duogrid_coordinate SHARED)
 
-# Use simpler method - collect all source files
+# Collect source files (removed fms and mpp)
 file(GLOB_RECURSE FMS_SOURCES 
-  "constants/*.F90"
   "platform/*.F90"
-  "mpp/*.F90"
-  "mpp/*.c"
-  "fms/*.F90"
   "chtholly/global_grid/*.F90"
   "chtholly/*.F90"
 )
@@ -272,100 +136,58 @@ file(GLOB CHTHOLLY_SOURCES "chtholly/*.F90")
 # Merge all source files
 set(FMS_ALL_SOURCES ${FMS_SOURCES} ${CHTHOLLY_SOURCES})
 
-# Add C source files
-file(GLOB_RECURSE FMS_C_SOURCES
-  "mpp/*.c"
-)
-
-# Merge all source files
-set(FMS_ALL_SOURCES ${FMS_SOURCES} ${CHTHOLLY_SOURCES} ${FMS_C_SOURCES})
-
 # Add source files to unified library
-target_sources(fms_unified PRIVATE ${FMS_ALL_SOURCES})
+target_sources(duogrid_coordinate PRIVATE ${FMS_ALL_SOURCES})
 
 # Set target properties
-set_target_properties(fms_unified PROPERTIES
+set_target_properties(duogrid_coordinate PROPERTIES
   Fortran_MODULE_DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}
   POSITION_INDEPENDENT_CODE ON
 )
 
-# Set include directories
-target_include_directories(fms_unified PUBLIC
-  ${CMAKE_SOURCE_DIR}/include
-  ${CMAKE_SOURCE_DIR}/mpp/include
-  ${CMAKE_SOURCE_DIR}/fms
-)
-if(NETCDF_FOUND)
-  target_include_directories(fms_unified PUBLIC ${NETCDF_INCLUDE_DIRS})
-endif()
-if(NETCDFF_FOUND)
-  target_include_directories(fms_unified PUBLIC ${NETCDFF_INCLUDE_DIRS})
-endif()
+
 
 # Link libraries - use conditional linking
 if(MPI_FOUND)
-  target_link_libraries(fms_unified PUBLIC MPI::MPI_C MPI::MPI_Fortran)
+  target_link_libraries(duogrid_coordinate PUBLIC MPI::MPI_C MPI::MPI_Fortran)
 endif()
 
-# Link netCDF libraries (prefer nc-config/nf-config outputs)
-if(NETCDF_LINK_FLAGS)
-  target_link_libraries(fms_unified PUBLIC ${NETCDF_LINK_FLAGS})
-  message(STATUS "Linking via nc-config: ${NETCDF_LINK_FLAGS}")
-elseif(NETCDF_FOUND)
-  target_link_libraries(fms_unified PUBLIC ${NETCDF_LIBRARIES})
-  message(STATUS "Linking netCDF C: ${NETCDF_LIBRARIES}")
-endif()
 
-if(NETCDFF_LINK_FLAGS)
-  target_link_libraries(fms_unified PUBLIC ${NETCDFF_LINK_FLAGS})
-  message(STATUS "Linking via nf-config: ${NETCDFF_LINK_FLAGS}")
-elseif(NETCDFF_FOUND)
-  target_link_libraries(fms_unified PUBLIC ${NETCDFF_LIBRARIES})
-  message(STATUS "Linking netCDF Fortran: ${NETCDFF_LIBRARIES}")
-endif()
-
-# If netCDF found by pkg-config, use its library paths
-if(PKG_CONFIG_FOUND AND NETCDF_FOUND)
-  target_link_directories(fms_unified PUBLIC ${NETCDF_LIBRARY_DIRS})
-endif()
-if(PKG_CONFIG_FOUND AND NETCDFF_FOUND)
-  target_link_directories(fms_unified PUBLIC ${NETCDFF_LIBRARY_DIRS})
-endif()
 
 # Set Fortran compiler options
 if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
-  target_compile_options(fms_unified PRIVATE 
+  target_compile_options(duogrid_coordinate PRIVATE 
     $<$<COMPILE_LANGUAGE:Fortran>:-fdefault-real-8 -std=legacy -fallow-argument-mismatch -fcray-pointer -fno-implicit-none>
   )
 #elseif(CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
-#  target_compile_options(fms_unified PRIVATE 
+#  target_compile_options(duogrid_coordinate PRIVATE 
 #    $<$<COMPILE_LANGUAGE:Fortran>:-r8 -std-legacy -no-range-check>
 #  )
 elseif(CMAKE_Fortran_COMPILER_ID MATCHES "Cray")
-  target_compile_options(fms_unified PRIVATE 
+  target_compile_options(duogrid_coordinate PRIVATE 
     $<$<COMPILE_LANGUAGE:Fortran>:-s real64 -h noomp -h noacc>
   )
 elseif(CMAKE_Fortran_COMPILER_ID MATCHES "PGI")
-  target_compile_options(fms_unified PRIVATE 
+  target_compile_options(duogrid_coordinate PRIVATE 
     $<$<COMPILE_LANGUAGE:Fortran>:-r8 -i8 -Mfree -Mextend>
   )
 elseif(CMAKE_Fortran_COMPILER_ID MATCHES "NAG")
-  target_compile_options(fms_unified PRIVATE 
+  target_compile_options(duogrid_coordinate PRIVATE 
     $<$<COMPILE_LANGUAGE:Fortran>:-double -free -f95>
   )
 endif()
 
 # Set C compiler options
 if(CMAKE_C_COMPILER_ID MATCHES "GNU")
-  target_compile_options(fms_unified PRIVATE 
+  target_compile_options(duogrid_coordinate PRIVATE 
     $<$<COMPILE_LANGUAGE:C>:-fPIC -w>
   )
 elseif(CMAKE_C_COMPILER_ID MATCHES "Clang")
-  target_compile_options(fms_unified PRIVATE 
+  target_compile_options(duogrid_coordinate PRIVATE 
     $<$<COMPILE_LANGUAGE:C>:-fPIC -w -Wno-overriding-deployment-version>
   )
 elseif(CMAKE_C_COMPILER_ID MATCHES "Intel")
-  target_compile_options(fms_unified PRIVATE 
+  target_compile_options(duogrid_coordinate PRIVATE 
     $<$<COMPILE_LANGUAGE:C>:-fPIC -w>
   )
 endif()

@@ -22,7 +22,6 @@ _PX       := $(word 2,$(_NL))
 _PY       := $(word 3,$(_NL))
 _PDEV     := $(word 4,$(_NL))
 _NP       := $(word 5,$(_NL))
-_FIELD_NP := $(word 6,$(_NL))
 FIELD_FILE := field/duogrid_C$(_NX).npz
 
 # ============================================================
@@ -73,11 +72,11 @@ _mkdirs:
 # ── field ────────────────────────────────────────────────────
 field: _mkdirs
 	@echo "=========================================="
-	@echo "  Generating field  C$(_NX)  PX=$(_PX) PY=$(_PY)  NP=$(_FIELD_NP)"
+	@echo "  Generating field  C$(_NX)"
 	@echo "=========================================="
 	@cd field && \
-	    mpirun -n $(_FIELD_NP) python ../$(SRC_FIELD) \
-	        --nx $(_NX) --px $(_PX) --py $(_PY) \
+	    mpirun -n 6 python ../$(SRC_FIELD) \
+	        --nx $(_NX)\
 	        2>../logs/field_error.log | cat
 	@echo "=========================================="
 	@echo "  Field generation finished"

@@ -22,8 +22,7 @@ module global_grid_base_mod
     use global_grid_gen_vec_mod,    only: global_grid_gen_elonlat
     use global_grid_gen_vec_mod,    only: global_grid_gen_mat
     use global_grid_gen_k2e_mod,    only: global_grid_gen_k2e
-    use constants_mod,      only: OMEGA,RADIUS
-
+    use lib_grid_mod,       only: OMEGA,RADIUS
     implicit none
     private
 

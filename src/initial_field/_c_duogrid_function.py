@@ -26,15 +26,14 @@ def _libc():
     project_root = os.path.join(current_dir, "..", "..")
     project_root = os.path.abspath(project_root)
     lib_dir = os.path.join(project_root, "lib", "lib")
-    so_path = os.path.join(lib_dir, "libfms_unified.so")
-    dylib_path = os.path.join(lib_dir, "libfms_unified.dylib")
+    so_path = os.path.join(lib_dir, "libduogrid_coordinate.so")
+    dylib_path = os.path.join(lib_dir, "libduogrid_coordinate.dylib")
     if os.path.exists(so_path):
         lib_path = so_path
     elif os.path.exists(dylib_path):
         lib_path = dylib_path
     else:
         raise FileNotFoundError(f"Cannot find shared library: {so_path} or {dylib_path}")
-    #lib_path = os.path.join("/data/yyq/data01/mls/licom4py/licom4py/lib/lib/libfms_unified.so")
     _lib = CDLL(lib_path)
     return _lib
 
@@ -307,41 +306,3 @@ def get_all_bc_d_grid(isd: int, ied: int, jsd: int, jed: int):
 
     return arrs
 
-
-def duogrid_c_method(cls):
-    """
-    Class decorator that adds all c_duogrid functions as class methods to the decorated class.
-    
-    This decorator takes all the functions defined in this module and adds them as 
-    class methods to the decorated class, allowing the class to use these C library functions
-    as class methods.
-    
-    Args:
-        cls: The class to be decorated (should be Duogrid)
-        
-    Returns:
-        The decorated class with all c_duogrid functions as class methods
-    """
-    # Get all functions from this module that should be added as methods
-    functions_to_add = [
-        'init_with_mp',
-        'end', 
-        'get_all_a_grid',
-        'get_all_bc_d_grid',
-    ]
-    
-    # Add each function as a class method to the class
-    for func_name in functions_to_add:
-        if func_name in globals():
-            func = globals()[func_name]
-            
-            # Create a wrapper method that ignores cls parameter
-            def make_classmethod(original_func):
-                def classmethod_wrapper(cls, *args, **kwargs):
-                    return original_func(*args, **kwargs)
-                return classmethod(classmethod_wrapper)
-            
-            # Bind the wrapped function as a class method to the class
-            setattr(cls, func_name, make_classmethod(func))
-    
-    return cls
