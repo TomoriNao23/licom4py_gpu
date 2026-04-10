@@ -75,7 +75,7 @@ field: _mkdirs
 	@echo "  Generating field  C$(_NX)"
 	@echo "=========================================="
 	@cd field && \
-	    mpirun -n 6 python ../$(SRC_FIELD) \
+	    python ../$(SRC_FIELD) \
 	        --nx $(_NX)\
 	        2>../logs/field_error.log | cat
 	@echo "=========================================="

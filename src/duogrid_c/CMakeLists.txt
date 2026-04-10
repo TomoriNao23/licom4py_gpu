@@ -3,6 +3,7 @@ project(FMS_Chtholly VERSION 1.0 LANGUAGES Fortran C)
 # Chtholly <mengleshan@mail.iap.ac.cn> 
 # Created: 2025.9.15
 # Updated: 2025.9.20 (set FMS_Chtholly the minimum_required)
+# Updated: 2026.4.11 (remove MPI)
 
 # Set Fortran compiler standard - use most permissive settings
 set(CMAKE_Fortran_STANDARD 90)
@@ -69,37 +70,6 @@ elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 endif()
 
-# Check MPI - use more permissive checking
-find_package(MPI)
-if(MPI_FOUND)
-  message(STATUS "MPI found: ${MPI_C_COMPILER}")
-  message(STATUS "MPI Fortran compiler: ${MPI_Fortran_COMPILER}")
-  if(MPI_C_COMPILER)
-    set(CMAKE_C_COMPILER ${MPI_C_COMPILER})
-  endif()
-  if(MPI_Fortran_COMPILER)
-    set(CMAKE_Fortran_COMPILER ${MPI_Fortran_COMPILER})
-  endif()
-  
-  # Set deployment target for MPI compilers to avoid version warnings
-  if(APPLE)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mmacosx-version-min=14.0")
-    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -mmacosx-version-min=14.0")
-  endif()
-else()
-  message(WARNING "MPI not found, proceeding without MPI support")
-  set(MPI_FOUND FALSE)
-endif()
-
-
-# Set include directories
-
-
-# Define preprocessor macros - use conditional definitions
-if(MPI_FOUND)
-  add_definitions(-Duse_libMPI)
-endif()
-
 # Detect operating system
 if(APPLE)
   add_definitions(-D__APPLE__)
@@ -144,15 +114,6 @@ set_target_properties(duogrid_coordinate PROPERTIES
   Fortran_MODULE_DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}
   POSITION_INDEPENDENT_CODE ON
 )
-
-
-
-# Link libraries - use conditional linking
-if(MPI_FOUND)
-  target_link_libraries(duogrid_coordinate PUBLIC MPI::MPI_C MPI::MPI_Fortran)
-endif()
-
-
 
 # Set Fortran compiler options
 if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
