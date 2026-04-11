@@ -12,13 +12,18 @@ REVISION HISTORY:
     04/01/2026 - Added timer
     19/03/2026 - Update timer; refactor imports to package-level paths
 """
-import time
+
+# Standard library imports
 import contextlib
+import time
+
+# Third-party imports
 import jax
 
 # Local application imports
 from licom.initial import Initial
 from licom.mymodule import Schedule
+
 
 @contextlib.contextmanager
 def jax_timer(name: str):
@@ -29,6 +34,7 @@ def jax_timer(name: str):
     t_end = time.perf_counter()
     print(f"{name} time: {t_end - t_start:.4f} s")
 
+
 def main():
     """LICOM main program entry"""
 
@@ -36,13 +42,14 @@ def main():
         licom = Initial()
 
     devices = jax.devices()
-    print(f"Devices ({len(devices)}): {devices[0].platform.upper()} "
-          f"[{', '.join(str(d) for d in devices)}]")
+    print(
+        f"Devices ({len(devices)}): {devices[0].platform.upper()} "
+        f"[{', '.join(str(d) for d in devices)}]"
+    )
 
     with jax_timer("Schedule.run"):
         Schedule.run(licom.momentum)
 
+
 if __name__ == "__main__":
     main()
-
-

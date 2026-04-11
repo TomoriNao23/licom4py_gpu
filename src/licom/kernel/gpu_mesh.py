@@ -6,15 +6,17 @@ Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2026-03-14
 Updated: 2026-03-15
 """
+
 # Third-party imports
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jax.sharding import NamedSharding, Mesh, PartitionSpec as P, SingleDeviceSharding
+from jax.sharding import Mesh, NamedSharding
+from jax.sharding import PartitionSpec as P
+from jax.sharding import SingleDeviceSharding
 
-# Local application imports
-from .g2l import Global2Local
 from .communication import Communication
+from .g2l import Global2Local
 
 
 class GPU_Mesh:
@@ -38,9 +40,9 @@ class GPU_Mesh:
         # JAX devices
         devices = jax.devices()
 
-        # 按照用户约定：始终按照 (pdev, px, py) 构造 mesh，
-        # 不再做额外分支逻辑。pdev, px, py 由 namelist 控制，
-        # 就算只有一张卡，也可以设置为 (1, 1, 1)。
+        # As per user convention: always construct the mesh as (pdev, px, py),
+        # eliminating the need for extra fallback branches. pdev, px, py are controlled by the namelist,
+        # so even a single-device setup maps cleanly to (1, 1, 1).
         n_mesh = cls.pdev * cls.px * cls.py
         if len(devices) < n_mesh:
             raise ValueError(
@@ -50,9 +52,18 @@ class GPU_Mesh:
 
         used = np.array(devices[:n_mesh]).reshape(cls.pdev, cls.px, cls.py)
         cls.devices = used
-        cls.mesh = Mesh(cls.devices, ('tile', 'x', 'y'))
-        #cls.sharding_2d = NamedSharding(cls.mesh, P('tile', 'x', 'y'))
+        cls.mesh = Mesh(cls.devices, ("tile", "x", "y"))
+        # cls.sharding_2d = NamedSharding(cls.mesh, P('tile', 'x', 'y'))
 
         # Global2Local and Communication now use this sharding
-        Global2Local.configure(cls.mesh, cls.halo, cls.nx_local, cls.ny_local, cls.nx, cls.ny, cls.npz, cls.ntile)
+        Global2Local.configure(
+            cls.mesh,
+            cls.halo,
+            cls.nx_local,
+            cls.ny_local,
+            cls.nx,
+            cls.ny,
+            cls.npz,
+            cls.ntile,
+        )
         Communication.configure(cls.halo, cls.nx_local, cls.ny_local, cls.mesh)

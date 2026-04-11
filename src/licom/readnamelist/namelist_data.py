@@ -7,15 +7,16 @@ Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
 Updated: 2025-09-16
 """
+
 # Standard library imports
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
-# Local application imports
-from .time_data import TimeConfig
 from .loader import LoaderMixin
 from .post_init import namelist_post_init
+from .time_data import TimeConfig
 from .validators import validate_namelist_class
+
 
 @validate_namelist_class
 @namelist_post_init
@@ -28,9 +29,11 @@ class Namelist(TimeConfig, LoaderMixin):
     # run_params section
     barotropic_dt: int = field(default=150, metadata={"section": namelist_local[0]})
     baroclinic_dt: int = field(default=3000, metadata={"section": namelist_local[0]})
-    tracer_interval: Optional[int] = field(default=None, metadata={"section": namelist_local[0]})
+    tracer_interval: Optional[int] = field(
+        default=None, metadata={"section": namelist_local[0]}
+    )
     rk_barotr: int = field(default=2, metadata={"section": namelist_local[0]})
-    case: str = field(default='w92case2', metadata={"section": namelist_local[0]})
+    case: str = field(default="w92case2", metadata={"section": namelist_local[0]})
 
     # grid section
     nx: int = field(default=96, metadata={"section": namelist_local[2]})
@@ -49,4 +52,6 @@ class Namelist(TimeConfig, LoaderMixin):
     _total_barotropic_steps: int = field(init=False, repr=True)
 
     # diagnostics
-    diag_freq: Optional[int] = field(default=None, metadata={"section": namelist_local[4]})
+    diag_freq: Optional[int] = field(
+        default=None, metadata={"section": namelist_local[4]}
+    )

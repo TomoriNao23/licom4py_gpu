@@ -20,21 +20,23 @@ from typing import Any, Optional, Tuple
 import jax
 import jax.numpy as jnp
 from jax import jit
+from jax.experimental.shard_map import shard_map
+from jax.sharding import NamedSharding
 from jax.sharding import PartitionSpec as P
 
 # Local application imports
-from licom.mesh import Communication, Cube, GPU_Mesh
-from licom.mesh.g2l import Global2Local
 from licom.duogrid import Dg
+from licom.kernel import Communication, Cube, GPU_Mesh
+from licom.kernel.g2l import Global2Local
 from licom.operators import Remap
-from jax.sharding import NamedSharding
-from jax.experimental.shard_map import shard_map
 
-@functools.partial(jit, 
-                   static_argnames=("test_case",))
-def initialize_test_velocity_field_jit(ub_in: Any, vb_in: Any, h0_in: Any, test_case: str = 'w92case2') -> Tuple[Any, Any, Any]:
+
+@functools.partial(jit, static_argnames=("test_case",))
+def initialize_test_velocity_field_jit(
+    ub_in: Any, vb_in: Any, h0_in: Any, test_case: str = "w92case2"
+) -> Tuple[Any, Any, Any]:
     """JIT version of velocity initialization for sharding safety."""
-    if test_case == 'w92case2':
+    if test_case == "w92case2":
         ubar = 1.0
         alpha = 0.0
         radius = 6.371e6
@@ -42,22 +44,36 @@ def initialize_test_velocity_field_jit(ub_in: Any, vb_in: Any, h0_in: Any, test_
         grav = 9.80
 
         def map_fn(ub_loc, vb_loc, h0_loc, a_pt_loc, a_l2c_loc):
+            """Calculate spherical coordinates, map velocities to local cubed-sphere projection, and compute steady-state surface elevation."""
             lon = a_pt_loc[..., 3:-3, 3:-3, 0]
             lat = a_pt_loc[..., 3:-3, 3:-3, 1]
-            
-            u_rll_lon = ubar * (jnp.cos(alpha) * jnp.cos(lat) + 
-                                jnp.sin(alpha) * jnp.cos(lon) * jnp.sin(lat))
+
+            u_rll_lon = ubar * (
+                jnp.cos(alpha) * jnp.cos(lat)
+                + jnp.sin(alpha) * jnp.cos(lon) * jnp.sin(lat)
+            )
             u_rll_lat = -ubar * jnp.sin(alpha) * jnp.sin(lon)
-            
+
             a_l2c_int = a_l2c_loc[..., 3:-3, 3:-3, :, :]
-            u_cubed = (a_l2c_int[..., 0, 0] * u_rll_lon + 
-                       a_l2c_int[..., 0, 1] * u_rll_lat)
-            v_cubed = (a_l2c_int[..., 1, 0] * u_rll_lon + 
-                       a_l2c_int[..., 1, 1] * u_rll_lat)
-            
-            h0_int = -(radius*omega*ubar+ubar**2/2.) * (
-                (-jnp.cos(lon)*jnp.cos(lat)*jnp.sin(alpha)+jnp.sin(lat)*jnp.cos(alpha))**2 - 1.0/3.0
-            )/grav
+            u_cubed = (
+                a_l2c_int[..., 0, 0] * u_rll_lon + a_l2c_int[..., 0, 1] * u_rll_lat
+            )
+            v_cubed = (
+                a_l2c_int[..., 1, 0] * u_rll_lon + a_l2c_int[..., 1, 1] * u_rll_lat
+            )
+
+            h0_int = (
+                -(radius * omega * ubar + ubar**2 / 2.0)
+                * (
+                    (
+                        -jnp.cos(lon) * jnp.cos(lat) * jnp.sin(alpha)
+                        + jnp.sin(lat) * jnp.cos(alpha)
+                    )
+                    ** 2
+                    - 1.0 / 3.0
+                )
+                / grav
+            )
 
             ub_out = ub_loc.at[..., 3:-3, 3:-3].set(u_cubed)
             vb_out = vb_loc.at[..., 3:-3, 3:-3].set(v_cubed)
@@ -73,31 +89,42 @@ def initialize_test_velocity_field_jit(ub_in: Any, vb_in: Any, h0_in: Any, test_
             mesh=GPU_Mesh.mesh,
             in_specs=(spec_2d, spec_2d, spec_2d, spec_pt, spec_l2c),
             out_specs=(spec_2d, spec_2d, spec_2d),
-            check_rep=False
+            check_rep=False,
         )
         return sharded_fn(ub_in, vb_in, h0_in, Dg.a_pt, Dg.a_l2c)
     else:
         return ub_in, vb_in, h0_in
 
-def initialize_test_velocity_field(momentum = None, test_case: str = 'w92case2') -> None:
-    """Initialize test velocity fields using JIT for sharding safety."""
-    with GPU_Mesh.mesh:
-        momentum.ub, momentum.vb, momentum.h0 = initialize_test_velocity_field_jit(momentum.ub, momentum.vb, momentum.h0, test_case)
 
-        from licom.mesh.spmd import make_spmd_jit
-        
+def initialize_test_velocity_field(momentum=None, test_case: str = "w92case2") -> None:
+    """
+    Initialize test velocity fields using fully localized SPMD mapping for sharding safety.
+    Resolves analytical steady-state conditions and synchronizes corner padding globally.
+    """
+    with GPU_Mesh.mesh:
+        momentum.ub, momentum.vb, momentum.h0 = initialize_test_velocity_field_jit(
+            momentum.ub, momentum.vb, momentum.h0, test_case
+        )
+
+        # Local application imports
+        from licom.kernel.spmd import make_spmd_jit
+
         def _scalar_core(state, consts):
-            h0, = state
+            (h0,) = state
             return (Cube.ext_scalar(h0),)
-            
+
         def _vector_core(state, consts):
             u, v = state
             return Cube.ext_vector(u, v)
 
-        ext_scalar_spmd = make_spmd_jit(_scalar_core, (momentum.h0,), (), static_argnums=())
-        ext_vector_spmd = make_spmd_jit(_vector_core, (momentum.ub, momentum.vb), (), static_argnums=())
-        
-        momentum.h0, = ext_scalar_spmd((momentum.h0,), ())
+        ext_scalar_spmd = make_spmd_jit(
+            _scalar_core, (momentum.h0,), (), static_argnums=()
+        )
+        ext_vector_spmd = make_spmd_jit(
+            _vector_core, (momentum.ub, momentum.vb), (), static_argnums=()
+        )
+
+        (momentum.h0,) = ext_scalar_spmd((momentum.h0,), ())
         momentum.ub, momentum.vb = ext_vector_spmd((momentum.ub, momentum.vb), ())
 
     # ubp, vbp, h0p
@@ -113,4 +140,3 @@ def initialize_test_velocity_field(momentum = None, test_case: str = 'w92case2')
     # print(momentum.h0[0,2,0:6], momentum.h0[0,2,-6:])
     # print(momentum.h0[0,2,48:51], momentum.h0[0,2,51:54])
     # print(momentum.h0[0,2,54:57], momentum.h0[0,2,57:60])
-

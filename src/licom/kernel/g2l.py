@@ -6,14 +6,18 @@ Description: Refactored Global-to-Local distribution logic with dynamic
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 """
 
+# Standard library imports
+from typing import Any, Dict, Tuple
+
+# Third-party imports
 import jax
 import jax.numpy as jnp
-from jax.sharding import NamedSharding, Mesh, PartitionSpec as P
-from typing import Any, Dict, Tuple
+from jax.sharding import Mesh, NamedSharding
+from jax.sharding import PartitionSpec as P
 
 
 class Global2Local:
-    # 全局配置参数
+    # Global configuration parameters
     mesh: Mesh = None
     halo: int = 3
     nx_local: int = 0
@@ -36,7 +40,7 @@ class Global2Local:
         npz: int,
         ntile: int = 6,
     ) -> None:
-        """从 GPU_Mesh 获取基础配置"""
+        """Retrieve base configuration from GPU_Mesh"""
         cls.mesh = mesh
         cls.halo = halo
         cls.nx_local = nx_local
@@ -49,11 +53,11 @@ class Global2Local:
     @classmethod
     def get_spec(cls, shape: Tuple[int, ...]) -> P:
         """
-        核心逻辑：动态检测维度并返回 PartitionSpec。
-        规则：
-          1. 维度 0 (size == ntile) 始终映射为 'tile'
-          2. 跳过维度 0 后，前两个 size > nx_local 的维度依次映射为 'x' 和 'y'
-          3. 其余维度映射为 None（不剖分）
+        Core logic: Dynamically detect dimensions and return PartitionSpec.
+        Rules:
+          1. Dimension 0 (size == ntile) is constantly mapped to 'tile'
+          2. Skipping dimension 0, the first two dimensions with size > nx_local are mapped to 'x' and 'y' respectively
+          3. Remaining dimensions are mapped to None (no sharding)
         """
         spec_list = [None] * len(shape)
         if len(shape) > 0 and shape[0] == cls.ntile:
@@ -61,8 +65,8 @@ class Global2Local:
 
         found_spatial = 0
         for i in range(1, len(shape)):
-            # nx_local 是不含 halo 的 local 宽度；
-            # 带 halo 的数组其空间维 size 必然大于 nx_local。
+            # nx_local is the local width without halo points;
+            # arrays with halo will inherently feature a spatial dimension strictly greater than nx_local.
             if shape[i] >= cls.nx_local and found_spatial < 2:
                 spec_list[i] = "y" if found_spatial == 0 else "x"
                 found_spatial += 1
@@ -72,8 +76,8 @@ class Global2Local:
     @classmethod
     def distribute_pre_padded(cls, global_data: jnp.ndarray) -> jnp.ndarray:
         """
-        将【已包含最外侧 Halo 区】的全局数组分配到各显卡。
-        每块设备恰好获得 (nx_local + 2h) × (ny_local + 2h) 的数据。
+        Distribute a global array that [already incorporates the outermost Halo regions] across JAX devices.
+        Every device will exactly receive a partitioned chunk of (nx_local + 2h) × (ny_local + 2h) data.
         """
         h = cls.halo
         spec = cls.get_spec(global_data.shape)
@@ -112,8 +116,8 @@ class Global2Local:
     @classmethod
     def distribute(cls, global_data: jnp.ndarray) -> jnp.ndarray:
         """
-        将【不包含 Halo 区】的原始全局数组在 CPU 上整体 pad 后，
-        复用 distribute_pre_padded 分卡。
+        Globally pad a raw array [without Halo regions] on the CPU native buffer,
+        then fallback to distribute_pre_padded for sharding.
         """
         h = cls.halo
         spec = cls.get_spec(global_data.shape)
@@ -126,20 +130,20 @@ class Global2Local:
 
         return cls.distribute_pre_padded(padded)
 
-    # ---- 快捷工厂方法 ----
+    # ---- Convenience Factory Methods ----
 
     @classmethod
     def zeros(cls, shape_key: str) -> jnp.ndarray:
         """
-        根据 key 创建带 Halo 的 sharded 零数组。
-        使用【不含 halo】的全局形状构造零数组，调用 distribute 完成 pad 与分卡。
+        Create a sharded zeros array with Halo padding initialized based on shape key.
+        Uses the [halo-free] global shape to construct the native zeros array, then dispatches to `distribute`.
         """
-        # 全局形状（不含 halo）
+        # Global shapes (without halo)
         shapes = {
-            "2d":       (cls.ntile, cls.nx, cls.ny),
-            "3d":       (cls.ntile, cls.npz, cls.nx, cls.ny),
-            "4d":       (cls.ntile, cls.nx, cls.ny, 2, 2),
-            "3d1":      (cls.ntile, cls.npz + 1, cls.nx, cls.ny),
+            "2d": (cls.ntile, cls.nx, cls.ny),
+            "3d": (cls.ntile, cls.npz, cls.nx, cls.ny),
+            "4d": (cls.ntile, cls.nx, cls.ny, 2, 2),
+            "3d1": (cls.ntile, cls.npz + 1, cls.nx, cls.ny),
             "3d_agrid": (cls.ntile, cls.nx, cls.ny, 2),
             "4d_agrid": (cls.ntile, cls.nx, cls.ny, 2, 2),
         }
@@ -148,7 +152,7 @@ class Global2Local:
 
     @classmethod
     def allocate(cls, owner: Any, field_groups: Dict[str, Any]) -> None:
-        """批量分配字段"""
+        """Batch allocate generic fields"""
         for shape_key, names in field_groups.items():
             for name in names:
                 setattr(owner, name, cls.zeros(shape_key))

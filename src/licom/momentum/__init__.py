@@ -11,5 +11,5 @@ REVISION HISTORY:
     03/09/2025 - Initial implementation
     19/03/2026 - Expose Momentum at package level
 """
-# Local application imports
+
 from .momentum import Momentum

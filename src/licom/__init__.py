@@ -1,1 +1,1 @@
-from .mymodule import NamelistError, InitialError
+from .mymodule import InitialError, NamelistError

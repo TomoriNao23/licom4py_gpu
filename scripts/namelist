@@ -20,7 +20,7 @@ ny = 96
 npz = 30
 
 [gpu_mesh]
-pdev = 2
+pdev = 1
 px = 2
 py = 2
 

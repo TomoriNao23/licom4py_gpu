@@ -7,8 +7,9 @@ Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
 Updated: 2025-09-03
 """
-from .namelist_data import Namelist
-from .timemanager import Timer
+
 from .loader import LoaderMixin
+from .namelist_data import Namelist
 from .post_init import time_config_post_init
+from .timemanager import Timer
 from .validators import validate_namelist_class

@@ -14,16 +14,15 @@ REVISION HISTORY:
     19/03/2026 - Refactor imports to package-level paths
 """
 
-# Local application imports
-from licom.mymodule import Schedule
-from licom.readnamelist import Namelist
-from licom.mesh import Global2Local
-from licom.duogrid import Dg
-from licom.mesh import GPU_Mesh
-from licom.momentum import Momentum
-
 # Third-party imports
 import jax.numpy as jnp
+
+# Local application imports
+from licom.duogrid import Dg
+from licom.kernel import Global2Local, GPU_Mesh
+from licom.momentum import Momentum
+from licom.mymodule import Schedule
+from licom.readnamelist import Namelist
 
 
 class Initial:
@@ -32,17 +31,17 @@ class Initial:
 
     def __init__(self):
 
-        # 1. Namelist
+        # Namelist
         self.namelist = Namelist.create()
 
-        # 2. GPU Mesh (sets up JAX device mesh, sharding, Global2Local, Communication)
+        # GPU Mesh (sets up JAX device mesh, sharding, Global2Local, Communication)
         GPU_Mesh.configure(self.namelist)
 
-        # 3. Duogrid (loads NPZ and distributes via Global2Local)
+        # Duogrid (loads NPZ and distributes via Global2Local)
         Dg.configure(self.namelist, GPU_Mesh)
 
-        # 4. Momentum
+        # Momentum
         self.momentum = Momentum(self.namelist)
 
-        # 5. Schedule
+        # Schedule
         Schedule.configure(self.namelist, ["barotropic"])

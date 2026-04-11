@@ -11,9 +11,9 @@ REVISION HISTORY:
     19/03/2026 - Expose Communication, Cube, Global2Local at package level
     07/04/2026 - Exposed make_spmd_jit wrapper
 """
-# Local application imports
-from .gpu_mesh import GPU_Mesh
+
 from .communication import Communication
 from .cube import Cube
 from .g2l import Global2Local
-from .spmd import make_spmd_jit, auto_pack, auto_unpack
+from .gpu_mesh import GPU_Mesh
+from .spmd import auto_pack, auto_unpack, make_spmd_jit

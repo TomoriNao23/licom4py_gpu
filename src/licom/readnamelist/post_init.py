@@ -7,21 +7,22 @@ Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
 Updated: 2025-09-16
 """
+
 # Standard library imports
 from datetime import datetime
 
-# Local application imports
 from .timemanager import TimeManager
+
 
 def time_config_post_init(cls):
     """Decorator: Handle all __post_init__ logic for TimeConfig class"""
-    original_post_init = getattr(cls, '__post_init__', None)
-    
+    original_post_init = getattr(cls, "__post_init__", None)
+
     def enhanced_post_init(self):
-        # 1. Execute validation first (does not rely on cached properties)
+        # Execute validation first (does not rely on cached properties)
         self.check_time_params()
 
-        # 2. Compute start datetime with defaults applied
+        # Compute start datetime with defaults applied
         start_dt = datetime(
             self.start_year or 2000,
             self.start_month or 1,
@@ -31,7 +32,7 @@ def time_config_post_init(cls):
             self.start_second or 0,
         )
 
-        # 3. Compute end datetime using TimeManager helper
+        # Compute end datetime using TimeManager helper
         end_dt = TimeManager.compute_end_datetime(
             start_dt,
             self.integration_years,
@@ -42,39 +43,47 @@ def time_config_post_init(cls):
             self.integration_seconds,
         )
 
-        # 4. Cache computed values
+        # Cache computed values
         object.__setattr__(self, "_start_datetime", start_dt)
         object.__setattr__(self, "_end_datetime", end_dt)
-        object.__setattr__(self, "_total_integration_seconds",
-                            int((end_dt - start_dt).total_seconds()))
-        
-        # 5. If there's an original __post_init__, execute it too
+        object.__setattr__(
+            self, "_total_integration_seconds", int((end_dt - start_dt).total_seconds())
+        )
+
+        # If there's an original __post_init__, execute it too
         if original_post_init is not None and original_post_init != enhanced_post_init:
             original_post_init(self)
-    
+
     cls.__post_init__ = enhanced_post_init
     return cls
 
+
 def namelist_post_init(cls):
     """Decorator: Handle all __post_init__ logic for Namelist class"""
-    original_post_init = getattr(cls, '__post_init__', None)
-    
+    original_post_init = getattr(cls, "__post_init__", None)
+
     def enhanced_post_init(self):
-        # 1. First execute parent class __post_init__ (validate time params etc.)
+        # First execute parent class __post_init__ (validate time params etc.)
         super(cls, self).__post_init__()
-        
-        # 2. Execute validation
+
+        # Execute validation
         self.check_namelist()
-        
-        # 3. Compute immutable, cached values
-        object.__setattr__(self, "_total_baroclinic_steps",
-                           int(self._total_integration_seconds / self.baroclinic_dt))
-        object.__setattr__(self, "_total_barotropic_steps",
-                           int(self._total_integration_seconds / self.barotropic_dt))
-        
-        # 4. If there's an original __post_init__, execute it too
+
+        # Compute immutable, cached values
+        object.__setattr__(
+            self,
+            "_total_baroclinic_steps",
+            int(self._total_integration_seconds / self.baroclinic_dt),
+        )
+        object.__setattr__(
+            self,
+            "_total_barotropic_steps",
+            int(self._total_integration_seconds / self.barotropic_dt),
+        )
+
+        # If there's an original __post_init__, execute it too
         if original_post_init is not None and original_post_init != enhanced_post_init:
             original_post_init(self)
-    
+
     cls.__post_init__ = enhanced_post_init
     return cls

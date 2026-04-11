@@ -12,16 +12,19 @@ REVISION HISTORY:
     07/01/2026 - Refactored execution strategy for performance optimization
     19/03/2026 - Refactor imports to package-level paths
 """
-# Standard library imports
+
 from __future__ import annotations
+
+# Standard library imports
 from typing import TYPE_CHECKING, Union
 
 # Local application imports
-from licom.readnamelist import Namelist, Timer
-from licom.mymodule import InitialError
 from licom.duogrid import Dg
+from licom.mymodule import InitialError
+from licom.readnamelist import Namelist, Timer
 
 if TYPE_CHECKING:
+    # Local application imports
     from licom.momentum import Momentum
 
 
@@ -36,15 +39,21 @@ class Schedule:
             routines: List of routines to execute
             current_time: Timer object
         """
-        cls.current_time: Timer = Timer(namelist._start_datetime, namelist.baroclinic_dt)
+        cls.current_time: Timer = Timer(
+            namelist._start_datetime, namelist.baroclinic_dt
+        )
         cls.tracer_interval: Union[int, None] = namelist.tracer_interval
         cls.total_baroclinic_steps: int = namelist._total_baroclinic_steps
-        cls.routines: list = ["barotropic", "baroclinic", "tracer"] \
-            if routines is None else routines
-        cls.diag_interval: int = 3600 / namelist.baroclinic_dt * namelist.diag_freq \
-            if namelist.diag_freq is not None and namelist.diag_freq > 0 else None
+        cls.routines: list = (
+            ["barotropic", "baroclinic", "tracer"] if routines is None else routines
+        )
+        cls.diag_interval: int = (
+            3600 / namelist.baroclinic_dt * namelist.diag_freq
+            if namelist.diag_freq is not None and namelist.diag_freq > 0
+            else None
+        )
         cls._build_execution_strategy()
-        
+
     @classmethod
     def _build_execution_strategy(cls):
         """Construct branch-free execution functions to accelerate runtime"""
@@ -54,40 +63,46 @@ class Schedule:
         barotropic_fn = None
         baroclinic_fn = None
         tracer_fn = None
-            
+
         # Diagnostics
         if cls.diag_interval is not None:
             diag_interval = cls.diag_interval
+            # Third-party imports
             import jax
+
             def diag_step(m):
                 if jax.process_index() == 0:
                     print(f"Time: {cls.current_time.prev_dt.strftime('%Y-%m-%d-%H')}")
                 m.print_global_diag()
+
             diag_fn = diag_step
-        
+
         # Barotropic
         if "barotropic" in cls.routines:
             barotropic_fn = lambda m: m.barotr()
-        
+
         # Baroclinic
         if "baroclinic" in cls.routines:
             baroclinic_fn = lambda m: None  # TODO: baroclinic logic
-        
+
         # Tracer
         if "tracer" in cls.routines and cls.tracer_interval is not None:
             tracer_interval = cls.tracer_interval
             tracer_fn = lambda m: None  # TODO: tracer logic
-        
+
         # Most common case: barotropic + baroclinic executed every step; tracer conditional; no diagnostics
         if barotropic_fn and baroclinic_fn and tracer_fn and not diag_fn:
+
             def execute_step(momentum, step):
                 barotropic_fn(momentum)
                 baroclinic_fn(momentum)
                 if step % tracer_interval == 0:
                     tracer_fn(momentum)
+
             cls._execute_step = execute_step
         # Common case 2: barotropic + baroclinic every step, tracer conditional, with diagnostics
         elif barotropic_fn and baroclinic_fn and tracer_fn and diag_fn:
+
             def execute_step(momentum, step):
                 if step % diag_interval == 0:
                     diag_fn(momentum)
@@ -95,21 +110,28 @@ class Schedule:
                 baroclinic_fn(momentum)
                 if step % tracer_interval == 0:
                     tracer_fn(momentum)
+
             cls._execute_step = execute_step
         # Only barotropic with diagnostics
         elif barotropic_fn and not baroclinic_fn and not tracer_fn and diag_fn:
+
             def execute_step(momentum, step):
                 if step % diag_interval == 0:
                     diag_fn(momentum)
                 barotropic_fn(momentum)
+
             cls._execute_step = execute_step
         # Only barotropic without diagnostics
         elif barotropic_fn and not baroclinic_fn and not tracer_fn and not diag_fn:
+
             def execute_step(momentum, step):
                 barotropic_fn(momentum)
+
             cls._execute_step = execute_step
         else:
-            raise InitialError("Execution strategy not implemented for the given routine combination.")
+            raise InitialError(
+                "Execution strategy not implemented for the given routine combination."
+            )
 
     @classmethod
     def run(cls, momentum: Momentum) -> None:

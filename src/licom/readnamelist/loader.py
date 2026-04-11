@@ -7,11 +7,13 @@ Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
 Updated: 2025-09-03
 """
+
 # Standard library imports
-from dataclasses import fields, MISSING
-from pathlib import Path
-from typing import Any, Type, Union, Optional, get_args, get_origin
 import configparser
+from dataclasses import MISSING, fields
+from pathlib import Path
+from typing import Any, Optional, Type, Union, get_args, get_origin
+
 
 class LoaderMixin:
     """Generic loading/creation mixin to be inherited by config classes."""
@@ -29,12 +31,11 @@ class LoaderMixin:
         float: configparser.ConfigParser.getfloat,
         bool: configparser.ConfigParser.getboolean,
     }
-    
+
     @classmethod
     def _parse_fields_from_config(
-        cls: Type, 
-        config: configparser.ConfigParser
-        ) -> dict[str, Any]:
+        cls: Type, config: configparser.ConfigParser
+    ) -> dict[str, Any]:
         """Parse dataclass init fields for 'cls' from a ConfigParser."""
         kwargs: dict[str, Any] = {}
         for f in fields(cls):
@@ -81,24 +82,20 @@ class LoaderMixin:
 
     @classmethod
     def _load_from_package_file(
-        cls: Type,
-        filename: str = "namelist",
-        anchor_file: Optional[Path] = None
-        ) -> Any:
+        cls: Type, filename: str = "namelist", anchor_file: Optional[Path] = None
+    ) -> Any:
         """
         Instantiate dataclass 'cls' from the project-level scripts/ directory.
         Walks up 4 levels from loader.py (readnamelist/ → licom/ → src/ → project root)
         then resolves <root>/scripts/<filename>.
         """
-        base = anchor_file.resolve() if anchor_file is not None else Path(__file__).resolve()
+        base = (
+            anchor_file.resolve()
+            if anchor_file is not None
+            else Path(__file__).resolve()
+        )
         project_root = base
         for _ in range(4):
             project_root = project_root.parent
         full_path = project_root / "scripts" / filename
         return cls._load_from_file(full_path)
-
-
-
-
-
-

@@ -11,10 +11,11 @@ REVISION HISTORY:
     03/09/2025 - Initial implementation
     19/03/2026 - Refactor import to package-level path
 """
+
 # Local application imports
-from licom.mesh import Global2Local
+from licom.kernel import Global2Local
 
 
-class DataABC():
+class DataABC:
     def __init__(self) -> None:
         Global2Local.allocate(self, self._field)

@@ -14,16 +14,17 @@ REVISION HISTORY:
     07/04/2026 - Replaced zeros_like buffer scatters with native jnp.pad
 """
 
+# Standard library imports
+import functools
+from typing import Tuple
+
 # Third-party imports
 import jax
 import jax.numpy as jnp
-import functools
-
-# Standard library imports
-from typing import Tuple
 
 # Local application imports
 from licom.duogrid import Dg
+
 from .poly import Poly
 
 
@@ -51,10 +52,10 @@ class AGrid:
             vort: vorticity [xsize, ysize]
         """
         core = Dg.rda[..., :-1, :-1] * (
-            uu[..., :-1, :-1] * Dg.d_dx[..., :-1, :-1] +
-            vv[..., 1:, :-1] * Dg.c_dy[..., 1:, :-1] -        # vv(i+1,j) * c_dy(i+1,j)
-            uu[..., :-1, 1:] * Dg.d_dx[..., :-1, 1:] -        # uu(i,j+1) * d_dx(i,j+1)
-            vv[..., :-1, :-1] * Dg.c_dy[..., :-1, :-1]          # vv(i,j) * c_dy(i,j)
+            uu[..., :-1, :-1] * Dg.d_dx[..., :-1, :-1]
+            + vv[..., 1:, :-1] * Dg.c_dy[..., 1:, :-1]  # vv(i+1,j) * c_dy(i+1,j)
+            - uu[..., :-1, 1:] * Dg.d_dx[..., :-1, 1:]  # uu(i,j+1) * d_dx(i,j+1)
+            - vv[..., :-1, :-1] * Dg.c_dy[..., :-1, :-1]  # vv(i,j) * c_dy(i,j)
         )
         pad = [(0, 0)] * (uu.ndim - 2) + [(0, 1), (0, 1)]
         return jnp.pad(core, pad)
@@ -72,10 +73,10 @@ class AGrid:
             div: divergence [xsize, ysize]
         """
         core = Dg.rda[..., :-1, :-1] * (
-            uu[..., 1:, :-1] * Dg.c_dy[..., 1:, :-1] -        # UX(i+1,j) * c_dy(i+1,j)
-            uu[..., :-1, :-1] * Dg.c_dy[..., :-1, :-1] +        # UX(i,j) * c_dy(i,j)
-            vv[..., :-1, 1:] * Dg.d_dx[..., :-1, 1:] -        # UY(i,j+1) * d_dx(i,j+1)
-            vv[..., :-1, :-1] * Dg.d_dx[..., :-1, :-1]          # UY(i,j) * d_dx(i,j)
+            uu[..., 1:, :-1] * Dg.c_dy[..., 1:, :-1]  # UX(i+1,j) * c_dy(i+1,j)
+            - uu[..., :-1, :-1] * Dg.c_dy[..., :-1, :-1]  # UX(i,j) * c_dy(i,j)
+            + vv[..., :-1, 1:] * Dg.d_dx[..., :-1, 1:]  # UY(i,j+1) * d_dx(i,j+1)
+            - vv[..., :-1, :-1] * Dg.d_dx[..., :-1, :-1]  # UY(i,j) * d_dx(i,j)
         )
         pad = [(0, 0)] * (uu.ndim - 2) + [(0, 1), (0, 1)]
         return jnp.pad(core, pad)
@@ -95,8 +96,12 @@ class AGrid:
         uhalf = Poly.scalar_x(eta)
         vhalf = Poly.scalar_y(eta)
 
-        core_x = Dg.rdx[..., 3:-3, 3:-3] * (uhalf[..., 4:-2, 3:-3] - uhalf[..., 3:-3, 3:-3])
-        core_y = Dg.rdy[..., 3:-3, 3:-3] * (vhalf[..., 3:-3, 4:-2] - vhalf[..., 3:-3, 3:-3])
-        
+        core_x = Dg.rdx[..., 3:-3, 3:-3] * (
+            uhalf[..., 4:-2, 3:-3] - uhalf[..., 3:-3, 3:-3]
+        )
+        core_y = Dg.rdy[..., 3:-3, 3:-3] * (
+            vhalf[..., 3:-3, 4:-2] - vhalf[..., 3:-3, 3:-3]
+        )
+
         pad = [(0, 0)] * (eta.ndim - 2) + [(3, 3), (3, 3)]
         return jnp.pad(core_x, pad), jnp.pad(core_y, pad)

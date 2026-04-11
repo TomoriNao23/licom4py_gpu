@@ -15,18 +15,19 @@ REVISION HISTORY:
     07/04/2026 - Replaced zeros_like buffer scatters with native jnp.pad
 """
 
-# Third-party imports
+# Standard library imports
 import functools
+from typing import Tuple
+
+# Third-party imports
 import jax
 import jax.numpy as jnp
 
-# Standard library imports
-from typing import Tuple
-
 # Local application imports
-from .poly import Poly
 from licom.duogrid import Dg
-from licom.mesh import Communication
+from licom.kernel import Communication
+
+from .poly import Poly
 
 
 class Remap:
@@ -96,10 +97,11 @@ class Remap:
         return ud, vd
 
     @staticmethod
-    @functools.partial(jax.jit, static_argnums=())
     def to_d_grid_upwind(
-        u: jnp.ndarray, v: jnp.ndarray,
-        uc: jnp.ndarray, vc: jnp.ndarray,
+        u: jnp.ndarray,
+        v: jnp.ndarray,
+        uc: jnp.ndarray,
+        vc: jnp.ndarray,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """
         Remap velocity to D-grid using upwind scheme.
@@ -134,8 +136,11 @@ class Remap:
 
     @staticmethod
     def vector_trans_2d(
-        u: jnp.ndarray, v: jnp.ndarray,
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        u: jnp.ndarray,
+        v: jnp.ndarray,
+    ) -> Tuple[
+        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+    ]:
         """
         Full 2D vector transformation: A-grid → C-grid (with communication) → D-grid (upwind).
 
@@ -145,7 +150,7 @@ class Remap:
         Returns:
             (uct, vct, ub_cx, ub_cy, vb_cx, vb_cy)
         """
-        uct, vct   = Remap.to_a_grid(u, v)
+        uct, vct = Remap.to_a_grid(u, v)
         ub_cx, vb_cy = Remap.to_c_grid(uct, vct)
         ub_cx, vb_cy = Communication.boundary_communication(ub_cx, vb_cy)
         ub_cy, vb_cx = Remap.to_d_grid_upwind(u, v, ub_cx, vb_cy)

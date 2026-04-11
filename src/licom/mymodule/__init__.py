@@ -8,5 +8,5 @@ Created: 2025-09-03
 Updated: 2026-01-07
 """
 
-from .exceptions import NamelistError, InitialError
+from .exceptions import InitialError, NamelistError
 from .schedule import Schedule

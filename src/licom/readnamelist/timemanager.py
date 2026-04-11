@@ -7,6 +7,7 @@ Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
 Updated: 2025-09-03
 """
+
 # Standard library imports
 from datetime import datetime, timedelta
 from typing import Optional
@@ -41,9 +42,13 @@ class TimeManager:
             try:
                 current_dt = current_dt.replace(year=new_year, month=new_month)
             except ValueError:
+                # Standard library imports
                 import calendar
+
                 last_day = calendar.monthrange(new_year, new_month)[1]
-                current_dt = current_dt.replace(year=new_year, month=new_month, day=last_day)
+                current_dt = current_dt.replace(
+                    year=new_year, month=new_month, day=last_day
+                )
 
         delta = timedelta(
             days=integration_days or 0,
