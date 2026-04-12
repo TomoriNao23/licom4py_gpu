@@ -41,6 +41,13 @@ def cube_rmp(var, coef, loc_i_local, loc_j_local, px, py):
         coef, loc_i_local, loc_j_local: Pre-computed constant index/weight arrays
         px, py: Grid layout params
     """
+    # Natively support arbitrary batch dimensions (e.g. nz=30, or packed stacked arrays)
+    # by peeling them off from axis 1 via vmap.
+    if var.ndim > 3:
+        return jax.vmap(cube_rmp, in_axes=(1, None, None, None, None, None), out_axes=1)(
+            var, coef, loc_i_local, loc_j_local, px, py
+        )
+
     ix = jax.lax.axis_index("x")
     iy = jax.lax.axis_index("y")
 
@@ -210,11 +217,13 @@ class Cube:
         ull = (cls.a_c2l[..., 0, 0] * u + cls.a_c2l[..., 0, 1] * v) * cls.inner
         vll = (cls.a_c2l[..., 1, 0] * u + cls.a_c2l[..., 1, 1] * v) * cls.inner
 
-        ull = cls.ext_scalar(ull)
-        vll = cls.ext_scalar(vll)
-
-        ull_new = (cls.a_l2c[..., 0, 0] * ull + cls.a_l2c[..., 0, 1] * vll) * cls.outer
-        vll_new = (cls.a_l2c[..., 1, 0] * ull + cls.a_l2c[..., 1, 1] * vll) * cls.outer
+        # Package the two variables together into a single array for simultaneous communication.
+        # We stack on axis 1 ensuring 'vtile' rigorously remains the very first axis (axis 0).
+        packed = jnp.stack([ull, vll], axis=1)
+        packed = cls.ext_scalar(packed)
+        
+        ull_new = (cls.a_l2c[..., 0, 0] * packed[:, 0] + cls.a_l2c[..., 0, 1] * packed[:, 1]) * cls.outer
+        vll_new = (cls.a_l2c[..., 1, 0] * packed[:, 0] + cls.a_l2c[..., 1, 1] * packed[:, 1]) * cls.outer
 
         u_new = ull_new + u * cls.inner
         v_new = vll_new + v * cls.inner

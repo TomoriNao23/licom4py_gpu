@@ -363,12 +363,15 @@ class Communication:
         px = recv_global.shape[2]
 
         if send.ndim > 3:
-            # recv_global is (mesh_tile, py, px, 4, vtile, halo, n)
-            # Properly pull vtile (axis 4) out next to mesh_tile (axis 0)
-            recv = jnp.transpose(recv_global, (0, 4, 1, 2, 3, 5, 6))
+            # recv_global shape is (pdev, py, px, 4, vtile, *batch_dims, h_size, n_size)
+            # Dynamically push vtile (axis 4) to be next to pdev (axis 0)
+            ndim_rg = recv_global.ndim
+            perm = [0, 4, 1, 2, 3] + list(range(5, ndim_rg))
+            recv = jnp.transpose(recv_global, tuple(perm))
 
-            n_pad = send.shape[-1]
-            recv = recv.reshape((Topology.NTILE, py, px, 4, cls.halo, n_pad))
+            # Collapse pdev and vtile into Topology.NTILE (flattening the tile dimension)
+            new_shape = (Topology.NTILE,) + recv.shape[2:]
+            recv = recv.reshape(new_shape)
 
             mesh_t = lax.axis_index("tile")
             vtile = send.shape[1]
@@ -383,53 +386,90 @@ class Communication:
 
     @classmethod
     def _update_domain_single(cls, u):
-        """Applies boundary exchange using all_gather (2-pass to correctly sync diagonal corners)."""
+        """Applies boundary exchange using all_gather and ppermute (to correctly sync diagonal corners)."""
         h = cls.halo
+        px = cls.mesh.shape["x"]
+        py = cls.mesh.shape["y"]
+        x = lax.axis_index("x")
+        y = lax.axis_index("y")
 
-        def process_dir(u_curr, recv, t, x, y, px, py, d, full):
-            t_b, x_b, y_b, d_b, tid = cls._resolve_neighbor(t, x, y, px, py, d)
+        def process_dir(u_curr, recv, t, x_, y_, px_, py_, d, full):
+            t_b, x_b, y_b, d_b, tid = cls._resolve_neighbor(t, x_, y_, px_, py_, d)
             nx_eval = u_curr.shape[-2] - 2 * h
             ny_eval = u_curr.shape[-1] - 2 * h
             return cls._apply_transform(
                 recv[t_b, y_b, x_b, d_b], d, tid, nx_eval, ny_eval, full
             )
 
-        def run_pass(u_curr, pass_type, dirs_to_update, full):
+        def run_pass_global(u_curr):
             send = jnp.stack(
                 [
-                    cls._pack_edge(u_curr, E, full),
-                    cls._pack_edge(u_curr, W, full),
-                    cls._pack_edge(u_curr, N, full),
-                    cls._pack_edge(u_curr, S, full),
+                    cls._pack_edge(u_curr, E, False),
+                    cls._pack_edge(u_curr, W, False),
+                    cls._pack_edge(u_curr, N, False),
+                    cls._pack_edge(u_curr, S, False),
                 ]
             )
-            recv, t, x, y, px, py = cls._gather_halo(send)
+            recv, t_idx, x_idx, y_idx, px_idx, py_idx = cls._gather_halo(send)
 
             res = u_curr
-            for d in dirs_to_update:
-                tgt_slice = cls._tgt_slice[(d, full)]
-                is_boundary = _IS_BOUNDARY[d](x, y, px, py)
-                mask = (
-                    is_boundary
-                    if pass_type == "GLOBAL"
-                    else jnp.logical_not(is_boundary)
-                )
+            for d in (E, W, N, S):
+                tgt_slice = cls._tgt_slice[(d, False)]
+                is_boundary = _IS_BOUNDARY[d](x_idx, y_idx, px_idx, py_idx)
 
                 # Use a closure factory to properly isolate 'd' and 'tgt_slice' during trace loop
                 def make_branch(d_val, slice_val):
                     return lambda r: r.at[slice_val].set(
-                        process_dir(u_curr, recv, t, x, y, px, py, d_val, full)
+                        process_dir(u_curr, recv, t_idx, x_idx, y_idx, px_idx, py_idx, d_val, False)
                     )
 
-                res = lax.cond(mask, make_branch(d, tgt_slice), lambda r: r, res)
+                res = lax.cond(is_boundary, make_branch(d, tgt_slice), lambda r: r, res)
             return res
 
         # Pass 1: Global boundaries (updates cross-tile edge halos, omitting diagonal corners)
-        u = run_pass(u, "GLOBAL", (E, W, N, S), full=False)
+        u = run_pass_global(u)
+
         # Pass 2: Local EW (updates X-axis halos for sub-tiles within a mesh tile, using full wide edge to sweep new global data)
-        u = run_pass(u, "LOCAL", (E, W), full=True)
+        if px > 1:
+            send_ew = jnp.stack([u[..., :, h : 2 * h], u[..., :, -2 * h : -h]], axis=-1)
+            recv_ew = lax.all_gather(send_ew, "x", tiled=False)
+
+            recv_from_E = recv_ew[(x + 1) % px, ..., 0]
+            u = lax.cond(
+                x < px - 1,
+                lambda val: val.at[..., :, -h:].set(recv_from_E),
+                lambda val: val,
+                u,
+            )
+
+            recv_from_W = recv_ew[(x - 1 + px) % px, ..., 1]
+            u = lax.cond(
+                x > 0,
+                lambda val: val.at[..., :, :h].set(recv_from_W),
+                lambda val: val,
+                u,
+            )
+
         # Pass 3: Local NS (final sweep updating Y-axis halos including newly populated corners)
-        u = run_pass(u, "LOCAL", (N, S), full=True)
+        if py > 1:
+            send_ns = jnp.stack([u[..., h : 2 * h, :], u[..., -2 * h : -h, :]], axis=-1)
+            recv_ns = lax.all_gather(send_ns, "y", tiled=False)
+
+            recv_from_N = recv_ns[(y + 1) % py, ..., 0]
+            u = lax.cond(
+                y < py - 1,
+                lambda val: val.at[..., -h:, :].set(recv_from_N),
+                lambda val: val,
+                u,
+            )
+
+            recv_from_S = recv_ns[(y - 1 + py) % py, ..., 1]
+            u = lax.cond(
+                y > 0,
+                lambda val: val.at[..., :h, :].set(recv_from_S),
+                lambda val: val,
+                u,
+            )
 
         return u
 
