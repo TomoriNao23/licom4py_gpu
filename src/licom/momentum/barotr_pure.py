@@ -59,8 +59,8 @@ def calculate_pgf(h0):
     return -9.80 * gradx, -9.80 * grady
 
 
-def get_pgf_vis_2d(celerity_x, celerity_y, rdx, rdy, u, v, pgf_u, pgf_v):
-    """Apply stabilized 2D horizontal viscosity directly to the pressure gradient force."""
+def calculate_pgf_vis_2d(celerity_x, celerity_y, rdx, rdy, u, v):
+    """Calculate stabilized 2D horizontal viscosity directly for momentum tendencies."""
     ue, uw = Poly.vector_ew(u)
     vn, vs = Poly.vector_ns(v)
 
@@ -70,7 +70,8 @@ def get_pgf_vis_2d(celerity_x, celerity_y, rdx, rdy, u, v, pgf_u, pgf_v):
     diff_x = rdx[:, 3:-3, 3:-3] * (core_x[:, 1:, 3:-3] - core_x[:, :-1, 3:-3])
     diff_y = rdy[:, 3:-3, 3:-3] * (core_y[:, 3:-3, 1:] - core_y[:, 3:-3, :-1])
 
-    return pgf_u.at[:, 3:-3, 3:-3].add(-diff_x), pgf_v.at[:, 3:-3, 3:-3].add(-diff_y)
+    pad_shape = [(0, 0)] * (u.ndim - 2) + [(3, 3), (3, 3)]
+    return jnp.pad(-diff_x, pad_shape), jnp.pad(-diff_y, pad_shape)
 
 
 def calculate_advection(vb_cx, ub_cy, ub_cx, vb_cy, vb_ct, ub_ct, rdx, rdy):
@@ -113,22 +114,37 @@ def _step_rk_logic(h0, h0p, ub, vb, ubp, vbp, consts, dt, beta_d, is_laststep):
 
     div_out = AGrid.div(flux_hu, flux_hv)
     new_h0 = h0p - div_out * dt
+    
+    # ------------------------------------------------------------------
+    # ASYNC COMMUNICATION OVERLAP (Latency Hiding)
+    # The XLA compiler will dispatch the network gather for new_h0 here.
+    # ------------------------------------------------------------------
     new_h0 = Cube.ext_scalar(new_h0)
 
-    # PGF and Advection Forces Accumulation
+    # ------------------------------------------------------------------
+    # INDEPENDENT COMPUTATION (Heavy Physics)
+    # Placed here so XLA can schedule them to execute asynchronously 
+    # alongside the network transfer of new_h0.
+    # ------------------------------------------------------------------
+    advx, advy = calculate_advection(vb_cx, ub_cy, ub_cx, vb_cy, vb_ct, ub_ct, rdx, rdy)
+    vis_x, vis_y = calculate_pgf_vis_2d(celerity_x, celerity_y, rdx, rdy, ub_ct, vb_ct)
+
+    # ------------------------------------------------------------------
+    # COMMUNICATION SYNCHRONIZATION POINT 
+    # Data is formally consumed causing the asynchronous barrier to yield.
+    # ------------------------------------------------------------------
     h0_tem = fb_scheme(new_h0, h0, beta_d)
     pgf_u, pgf_v = calculate_pgf(h0_tem)
-    pgf_u, pgf_v = get_pgf_vis_2d(
-        celerity_x, celerity_y, rdx, rdy, ub_ct, vb_ct, pgf_u, pgf_v
-    )
 
-    advx, advy = calculate_advection(vb_cx, ub_cy, ub_cx, vb_cy, vb_ct, ub_ct, rdx, rdy)
-    rhs_u = pgf_u + advx + a_f * vb_ct
-    rhs_v = pgf_v + advy - a_f * ub_ct
+    # ------------------------------------------------------------------
+    # MAXIMUM KERNEL FUSION (SPMD Local Execution)
+    # Writing the final update as a single combined algebraic equation 
+    # guarantees that XLA will compile this into precisely ONE CUDA kernel.
+    # This prevents expensive VRAM register spilling and maximizes bandwidth.
+    # ------------------------------------------------------------------
+    new_ub = ubp + (pgf_u + advx + a_f * vb_ct + vis_x) * dt
+    new_vb = vbp + (pgf_v + advy - a_f * ub_ct + vis_y) * dt
 
-    # Final Explicit Solvers execution
-    new_ub = ubp + rhs_u * dt
-    new_vb = vbp + rhs_v * dt
     new_ub, new_vb = Cube.ext_vector(new_ub, new_vb)
 
     return (
