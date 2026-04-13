@@ -101,7 +101,7 @@ def _step_rk_logic(h0, h0p, ub, vb, ubp, vbp, consts, dt, beta_d, is_laststep):
     Core fractional stage execution of the Runge-Kutta operator for SPMD barotropic progression.
     Validates physical dynamics (continuity, PGF, advection) per localized tile iteration.
     """
-    dzph_x, dzph_y, pax, pxb, whx, pay, pyb, why, wgp, rdx, rdy, a_f = consts
+    dzph_x, dzph_y, rdx, rdy, a_f, pax, pxb, whx, pay, pyb, why, wgp = consts
 
     # Edge Gravity Wave & Viscosity Processing
     celerity_x, celerity_y = get_celerity(h0, dzph_x, dzph_y)

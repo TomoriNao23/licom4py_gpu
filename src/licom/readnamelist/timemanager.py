@@ -67,3 +67,7 @@ class Timer:
     def time_now(self) -> None:
         self.prev_dt += timedelta(seconds=self.delta_dt)
         return None
+
+    def advance(self, n: int) -> None:
+        """Advance time by n steps at once."""
+        self.prev_dt += timedelta(seconds=self.delta_dt * n)
