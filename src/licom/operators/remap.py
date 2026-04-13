@@ -1,11 +1,11 @@
 """
 File: remap.py
-Description: Grid remapping functions as static methods of the Remap class.
-    Handles A-grid, C-grid, D-grid remapping and 2D vector transformation.
+Description: Grid remapping functions as pure static methods.
+    All grid data passed explicitly — no singleton access.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-20
-Updated: 2026-04-07
+Updated: 2026-04-13
 
 REVISION HISTORY:
     20/09/2025 - Initial implementation
@@ -13,18 +13,16 @@ REVISION HISTORY:
     19/03/2026 - Refactor imports to package-level paths
     19/03/2026 - Wrap functions as Remap static methods
     07/04/2026 - Replaced zeros_like buffer scatters with native jnp.pad
+    13/04/2026 - Converted to explicit parameter passing
 """
 
 # Standard library imports
-import functools
 from typing import Tuple
 
 # Third-party imports
-import jax
 import jax.numpy as jnp
 
 # Local application imports
-from licom.duogrid import Dg
 from licom.kernel import Communication
 
 from .poly import Poly
@@ -34,31 +32,15 @@ class Remap:
     """Grid remapping operators: A-grid, C-grid, D-grid, and vector transformation."""
 
     @staticmethod
-    def to_a_grid(u: jnp.ndarray, v: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        """
-        Remap velocity to A-grid (contravariant transformation).
-
-        Args:
-            u, v: velocity components [..., xsize, ysize]
-
-        Returns:
-            (uct, vct) - contravariant velocities on A-grid
-        """
-        uct = (Dg.a_gct[..., 0, 0] * u + Dg.a_gct[..., 0, 1] * v) * Dg.a_sina
-        vct = (Dg.a_gct[..., 1, 0] * u + Dg.a_gct[..., 1, 1] * v) * Dg.a_sina
+    def to_a_grid(u, v, a_gct, a_sina):
+        """Remap velocity to A-grid (contravariant transformation)."""
+        uct = (a_gct[..., 0, 0] * u + a_gct[..., 0, 1] * v) * a_sina
+        vct = (a_gct[..., 1, 0] * u + a_gct[..., 1, 1] * v) * a_sina
         return uct, vct
 
     @staticmethod
-    def to_c_grid(u: jnp.ndarray, v: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        """
-        Remap velocity to C-grid.
-
-        Args:
-            u, v: velocity components [..., xsize, ysize]
-
-        Returns:
-            (uc, vc) - C-grid remapped velocities
-        """
+    def to_c_grid(u, v):
+        """Remap velocity to C-grid."""
         ue, uw = Poly.vector_ew(u)
         un, us = Poly.vector_ns(v)
 
@@ -73,16 +55,8 @@ class Remap:
         return uc, vc
 
     @staticmethod
-    def to_d_grid(u: jnp.ndarray, v: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        """
-        Remap velocity to D-grid.
-
-        Args:
-            u, v: velocity components [..., xsize, ysize]
-
-        Returns:
-            (ud, vd) - D-grid remapped velocities
-        """
+    def to_d_grid(u, v):
+        """Remap velocity to D-grid."""
         un, us = Poly.vector_ns(u)
         ve, vw = Poly.vector_ew(v)
 
@@ -97,22 +71,8 @@ class Remap:
         return ud, vd
 
     @staticmethod
-    def to_d_grid_upwind(
-        u: jnp.ndarray,
-        v: jnp.ndarray,
-        uc: jnp.ndarray,
-        vc: jnp.ndarray,
-    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        """
-        Remap velocity to D-grid using upwind scheme.
-
-        Args:
-            u, v: velocity components [..., xsize, ysize]
-            uc, vc: contravariant velocities for upwind selection
-
-        Returns:
-            (ud, vd) - D-grid velocities with upwind scheme
-        """
+    def to_d_grid_upwind(u, v, uc, vc):
+        """Remap velocity to D-grid using upwind scheme."""
         un, us = Poly.vector_ns(u)
         ve, vw = Poly.vector_ew(v)
 
@@ -135,22 +95,14 @@ class Remap:
         return ud, vd
 
     @staticmethod
-    def vector_trans_2d(
-        u: jnp.ndarray,
-        v: jnp.ndarray,
-    ) -> Tuple[
-        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
-    ]:
+    def vector_trans_2d(u, v, a_gct, a_sina):
         """
         Full 2D vector transformation: A-grid → C-grid (with communication) → D-grid (upwind).
-
-        Args:
-            u, v: velocity components [..., xsize, ysize]
 
         Returns:
             (uct, vct, ub_cx, ub_cy, vb_cx, vb_cy)
         """
-        uct, vct = Remap.to_a_grid(u, v)
+        uct, vct = Remap.to_a_grid(u, v, a_gct, a_sina)
         ub_cx, vb_cy = Remap.to_c_grid(uct, vct)
         ub_cx, vb_cy = Communication.boundary_communication(ub_cx, vb_cy)
         ub_cy, vb_cx = Remap.to_d_grid_upwind(u, v, ub_cx, vb_cy)

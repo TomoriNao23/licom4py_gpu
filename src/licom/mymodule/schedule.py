@@ -90,21 +90,35 @@ STATE_KEYS = (
     # "temp", "salt", ...
 )
 
-# Consts: only truly immutable grid geometry from Dg (never modified by any module)
+# Consts: truly immutable grid geometry from Dg (never modified by any module)
 CONST_SOURCES = (
+    # --- Grid geometry ---
     (Dg, "dzph_x"),
     (Dg, "dzph_y"),
     (Dg, "rdx"),
     (Dg, "rdy"),
     (Dg, "a_f"),
-    # --- Extend with more Dg fields as needed ---
+    # --- Cube remapping / vector transform arrays ---
+    (Dg, "k2e_coef"),
+    (Dg, "loc_i_local"),
+    (Dg, "loc_j_local"),
+    (Dg, "a_c2l"),
+    (Dg, "a_l2c"),
+    (Dg, "inner"),
+    (Dg, "outer"),
+    # --- AGrid / Remap operator arrays ---
+    (Dg, "a_gct"),
+    (Dg, "a_sina"),
+    (Dg, "rda"),
+    (Dg, "c_dy"),
+    (Dg, "d_dx"),
 )
 
 # Slice boundaries for bc_body field isolation
-N_BAROTR_STATE = 23   # state[0:23]  → barotropic (16 core + 7 coupling)
-N_BAROTR_CONSTS = 5   # consts[0:5]  → barotropic Dg fields
-# N_BCLINIC_STATE = ?  # state[23:23+?] → baroclinic (TODO)
-# N_BCLINIC_CONSTS = ? # consts[5:5+?]  → baroclinic (TODO)
+N_BAROTR_STATE = 23    # state[0:23]   → barotropic (16 core + 7 coupling)
+N_BAROTR_CONSTS = 17   # consts[0:17]  → barotropic (5 geometry + 7 cube + 5 operators)
+# N_BCLINIC_STATE = ?   # state[23:23+?] → baroclinic (TODO)
+# N_BCLINIC_CONSTS = ?  # consts[17:17+?] → baroclinic (TODO)
 
 
 # =====================================================================
@@ -125,6 +139,10 @@ def _make_schedule_core(rk_type_barotr):
     from licom.momentum.barotr import _barotr_rk2_core, _barotr_rk3_core
 
     rk_core = _barotr_rk2_core if rk_type_barotr == 2 else _barotr_rk3_core
+
+    # Bind mesh layout as Python constants (never changes during simulation)
+    px = GPU_Mesh.mesh.shape["x"]
+    py = GPU_Mesh.mesh.shape["y"]
 
     def schedule_core(state, consts, chunk_size, nbb, dtb):
         """
@@ -148,7 +166,7 @@ def _make_schedule_core(rk_type_barotr):
         def bc_body(i, s):
             # ── Step 1: Barotropic ───────────────────────
             barotr_s = s[:n_s_bt]
-            barotr_s = rk_core(barotr_s, barotr_consts, nbb, dtb)
+            barotr_s = rk_core(barotr_s, barotr_consts, nbb, dtb, px, py)
             s = barotr_s + s[n_s_bt:]  # preserve extra fields
 
             # ── Step 2: Baroclinic (TODO) ────────────────

@@ -1,5 +1,5 @@
 [run_params]
-barotropic_dt = 150
+barotropic_dt = 30
 baroclinic_dt = 3600
 tracer_interval = 1
 rk_barotr = 2
@@ -9,14 +9,14 @@ case = w92case2
 start_year = 2000
 start_month = 1
 start_day = 1
-integration_days = 100
+integration_days = 2
 #integration_hours = 2
 #integration_months = 1
 #integration_years = 5
 
 [grid]
-nx = 96
-ny = 96
+nx = 384
+ny = 384
 npz = 30
 
 [gpu_mesh]

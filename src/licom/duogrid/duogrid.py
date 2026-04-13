@@ -68,21 +68,16 @@ class Duogrid:
         # These functions internally call Global2Local.zeros/array maintaining sharding semantics
         cls._init_calculations()
 
+        # Build pre-computed local indices for cube remapping (stored on Dg, not Cube)
         # Local application imports
         from licom.kernel import Cube
 
-        Cube.configure(
-            cls.k2e_coef,
-            cls.k2e_loc_i,
-            cls.k2e_loc_j,
-            cls.a_c2l,
-            cls.a_l2c,
-            cls.inner,
-            cls.outer,
-            cls.nx_local,
-            cls.ny_local,
-            cls.px,
-            cls.py,
+        nx_h = cls.nx_local + 2 * cls.halo
+        ny_h = cls.ny_local + 2 * cls.halo
+        cls.loc_i_local, cls.loc_j_local = Cube.build_local_indices(
+            cls.k2e_loc_i, cls.k2e_loc_j,
+            cls.nx_local, cls.ny_local, nx_h, ny_h,
+            cls.px, cls.py,
         )
 
         print("Duogrid initialized successfully.")
