@@ -1,16 +1,15 @@
 """
 File: momentum.py
-Description: Momentum class combining diagnostic methods,
+Description: Momentum class combining barotropic and diagnostic methods,
     built on MomentumData via decorator pattern.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-22
-Updated: 2026-04-13
+Updated: 2026-03-19
 
 REVISION HISTORY:
     22/09/2025 - Initial implementation of Momentum class
     19/03/2026 - Refactor imports to package-level paths
-    13/04/2026 - Removed barotropic JIT setup; Schedule now manages SPMD compilation
 """
 
 # Third-party imports
@@ -22,7 +21,10 @@ from licom.duogrid import Dg
 from licom.initial.w92_field import initialize_test_velocity_field
 from licom.mymodule.diag import add_diag_methods
 
+from .barotr import add_barotropic_methods
 
+
+@add_barotropic_methods
 @add_diag_methods
 class Momentum(MomentumData):
 
@@ -37,7 +39,7 @@ class Momentum(MomentumData):
         self.nbb = namelist.baroclinic_dt // namelist.barotropic_dt
         ## Barotropic time step
         self.dtb = float(namelist.barotropic_dt)
-        ## RK type for schedule-level core selection
-        self.rk_barotr = namelist.rk_barotr
         # initialize the fields
         initialize_test_velocity_field(momentum=self, test_case=namelist.case)
+        # Execute only once during initialization: State packing and JIT graph compilation
+        self.setup_barotropic_jit(namelist.rk_barotr)

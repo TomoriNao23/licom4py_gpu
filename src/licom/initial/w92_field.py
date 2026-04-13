@@ -26,7 +26,7 @@ from jax.sharding import PartitionSpec as P
 
 # Local application imports
 from licom.duogrid import Dg
-from licom.kernel import Communication, GPU_Mesh
+from licom.kernel import Communication, Cube, GPU_Mesh
 from licom.kernel.g2l import Global2Local
 from licom.operators import Remap
 
@@ -107,37 +107,25 @@ def initialize_test_velocity_field(momentum=None, test_case: str = "w92case2") -
         )
 
         # Local application imports
-        from licom.kernel.cube import ext_scalar, ext_vector
         from licom.kernel.spmd import make_spmd_jit
-
-        px = GPU_Mesh.mesh.shape["x"]
-        py = GPU_Mesh.mesh.shape["y"]
 
         def _scalar_core(state, consts):
             (h0,) = state
-            coef, loc_i, loc_j = consts
-            return (ext_scalar(h0, coef, loc_i, loc_j, px, py),)
+            return (Cube.ext_scalar(h0),)
 
         def _vector_core(state, consts):
             u, v = state
-            coef, loc_i, loc_j, a_c2l, a_l2c, inner, outer = consts
-            return ext_vector(u, v, coef, loc_i, loc_j, a_c2l, a_l2c, inner, outer, px, py)
-
-        scalar_consts = (Dg.k2e_coef, Dg.loc_i_local, Dg.loc_j_local)
-        vector_consts = (Dg.k2e_coef, Dg.loc_i_local, Dg.loc_j_local,
-                         Dg.a_c2l, Dg.a_l2c, Dg.inner, Dg.outer)
+            return Cube.ext_vector(u, v)
 
         ext_scalar_spmd = make_spmd_jit(
-            _scalar_core, (momentum.h0,), scalar_consts, static_argnums=()
+            _scalar_core, (momentum.h0,), (), static_argnums=()
         )
         ext_vector_spmd = make_spmd_jit(
-            _vector_core, (momentum.ub, momentum.vb), vector_consts, static_argnums=()
+            _vector_core, (momentum.ub, momentum.vb), (), static_argnums=()
         )
 
-        (momentum.h0,) = ext_scalar_spmd((momentum.h0,), scalar_consts)
-        momentum.ub, momentum.vb = ext_vector_spmd(
-            (momentum.ub, momentum.vb), vector_consts
-        )
+        (momentum.h0,) = ext_scalar_spmd((momentum.h0,), ())
+        momentum.ub, momentum.vb = ext_vector_spmd((momentum.ub, momentum.vb), ())
 
     # ubp, vbp, h0p
     momentum.ubp = momentum.ub
