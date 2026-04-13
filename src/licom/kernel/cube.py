@@ -1,16 +1,17 @@
 """
 File: cube.py
 Description: Pure functions for cubed-sphere grid operations, including boundary remapping
-    and vector transformations. All constants and direction-dependent logic are pre-compiled
-    at module/configure time. No runtime branching in hot paths.
+    and vector transformations. All functions are pure — no singleton data access.
+    Grid data is stored in Dg; Cube only provides static computation methods.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2026-03-15
-Updated: 2026-04-11
+Updated: 2026-04-13
 
 REVISION HISTORY:
     15/03/2026 - Initial implementation
     11/04/2026 - Pre-compiled constants/slices, eliminated try/except, removed unused params
+    13/04/2026 - Converted to pure functions; data moved to Dg
 """
 
 # Third-party imports
@@ -29,6 +30,11 @@ _SL_W = jnp.s_[..., _NG:-_NG, :_NG]
 _SL_E = jnp.s_[..., _NG:-_NG, -_NG:]
 _SL_S = jnp.s_[..., :_NG, _NG:-_NG]
 _SL_N = jnp.s_[..., -_NG:, _NG:-_NG]
+
+
+# ==========================================
+# Pure Functions (no singleton access)
+# ==========================================
 
 
 def cube_rmp(var, coef, loc_i_local, loc_j_local, px, py):
@@ -121,29 +127,53 @@ def cube_rmp(var, coef, loc_i_local, loc_j_local, px, py):
     return var
 
 
-class Cube:
-    coef = None
-    # Pre-computed local index arrays dropping the slow dynamic index calculations
-    loc_i_local = None
-    loc_j_local = None
-    a_c2l = None
-    a_l2c = None
-    inner = None
-    outer = None
-    nx_local = 0
-    ny_local = 0
-    px = 1
-    py = 1
+def ext_scalar(var, coef, loc_i_local, loc_j_local, px, py):
+    """Exchange scalar values across domain boundaries (pure function)."""
+    var = Communication.update_domain(var)
+    var = cube_rmp(var, coef, loc_i_local, loc_j_local, px, py)
+    return var
 
-    @classmethod
-    def _build_local_indices(cls, loc_i, loc_j, nx_local, ny_local, nx_h, ny_h, px, py):
+
+def ext_vector(u, v, coef, loc_i_local, loc_j_local, a_c2l, a_l2c, inner, outer, px, py):
+    """Exchange vector values across domain boundaries (pure function)."""
+    ull = (a_c2l[..., 0, 0] * u + a_c2l[..., 0, 1] * v) * inner
+    vll = (a_c2l[..., 1, 0] * u + a_c2l[..., 1, 1] * v) * inner
+
+    # Package the two variables together into a single array for simultaneous communication.
+    # We stack on axis 1 ensuring 'vtile' rigorously remains the very first axis (axis 0).
+    packed = jnp.stack([ull, vll], axis=1)
+    packed = ext_scalar(packed, coef, loc_i_local, loc_j_local, px, py)
+
+    ull_new = (a_l2c[..., 0, 0] * packed[:, 0] + a_l2c[..., 0, 1] * packed[:, 1]) * outer
+    vll_new = (a_l2c[..., 1, 0] * packed[:, 0] + a_l2c[..., 1, 1] * packed[:, 1]) * outer
+
+    u_new = ull_new + u * inner
+    v_new = vll_new + v * inner
+
+    return u_new, v_new
+
+
+# ==========================================
+# Cube Class (configure-time only, no hot-path data)
+# ==========================================
+class Cube:
+    """
+    Cube configuration utility.
+    Builds pre-computed local indices at configure() time and stores them into Dg.
+    No data is stored on Cube itself — all grid data lives in Dg.
+    """
+
+    @staticmethod
+    def build_local_indices(loc_i, loc_j, nx_local, ny_local, nx_h, ny_h, px, py):
         """
         Pre-compute all local index coordinates (local offsets) directly on the host side.
         This decouples runtime arithmetic like `loc_i_local = loc_i - iy * ny_local` from the `cube_rmp` hot-path.
-        Because the stored coordinates are precisely what is needed, retrieving interpolation points via `take_along_axis` becomes highly efficient.
         """
         # Third-party imports
         import numpy as np
+
+        # Local application imports
+        from licom.kernel.g2l import Global2Local
 
         l_i = np.asarray(loc_i, dtype=np.int32)
         l_j = np.asarray(loc_j, dtype=np.int32)
@@ -163,10 +193,6 @@ class Cube:
                 # South/North uses loc_j which shifts relative to the x block offset
                 j_local_global[:, y_slc, x_slc] = l_j[:, y_slc, x_slc] - ix * nx_local
 
-        # Redistribute smoothly
-        # Local application imports
-        from licom.kernel.g2l import Global2Local
-
         spec = Global2Local.get_spec(i_local_global.shape)
 
         return (
@@ -179,53 +205,3 @@ class Cube:
                 jax.sharding.NamedSharding(Global2Local.mesh, spec),
             ),
         )
-
-    @classmethod
-    def configure(
-        cls, coef, loc_i, loc_j, a_c2l, a_l2c, inner, outer, nx_local, ny_local, px, py
-    ):
-        cls.coef = coef
-        cls.a_c2l = a_c2l
-        cls.a_l2c = a_l2c
-        cls.inner = inner
-        cls.outer = outer
-        cls.nx_local = nx_local
-        cls.ny_local = ny_local
-        cls.px = px
-        cls.py = py
-
-        nx_h = nx_local + 2 * _NG
-        ny_h = ny_local + 2 * _NG
-        cls.loc_i_local, cls.loc_j_local = cls._build_local_indices(
-            loc_i, loc_j, nx_local, ny_local, nx_h, ny_h, px, py
-        )
-
-    @classmethod
-    def ext_scalar(cls, var):
-        """
-        Exchange scalar values across domain boundaries.
-        """
-        var = Communication.update_domain(var)
-        var = cube_rmp(var, cls.coef, cls.loc_i_local, cls.loc_j_local, cls.px, cls.py)
-        return var
-
-    @classmethod
-    def ext_vector(cls, u, v):
-        """
-        Exchange vector values across domain boundaries.
-        """
-        ull = (cls.a_c2l[..., 0, 0] * u + cls.a_c2l[..., 0, 1] * v) * cls.inner
-        vll = (cls.a_c2l[..., 1, 0] * u + cls.a_c2l[..., 1, 1] * v) * cls.inner
-
-        # Package the two variables together into a single array for simultaneous communication.
-        # We stack on axis 1 ensuring 'vtile' rigorously remains the very first axis (axis 0).
-        packed = jnp.stack([ull, vll], axis=1)
-        packed = cls.ext_scalar(packed)
-        
-        ull_new = (cls.a_l2c[..., 0, 0] * packed[:, 0] + cls.a_l2c[..., 0, 1] * packed[:, 1]) * cls.outer
-        vll_new = (cls.a_l2c[..., 1, 0] * packed[:, 0] + cls.a_l2c[..., 1, 1] * packed[:, 1]) * cls.outer
-
-        u_new = ull_new + u * cls.inner
-        v_new = vll_new + v * cls.inner
-
-        return u_new, v_new

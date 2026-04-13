@@ -13,7 +13,8 @@ REVISION HISTORY:
 import jax.numpy as jnp
 
 # Local application imports
-from licom.kernel import Communication, Cube
+from licom.kernel import Communication
+from licom.kernel.cube import ext_scalar, ext_vector
 from licom.operators import AGrid, Poly, Remap
 
 
@@ -53,9 +54,9 @@ def fb_scheme(h0, h0_tem, beta_d):
     return (1.0 - beta_d) * h0 + beta_d * h0_tem
 
 
-def calculate_pgf(h0):
+def calculate_pgf(h0, rdx, rdy):
     """Calculate the Pressure Gradient Force (PGF) derived from surface elevation."""
-    gradx, grady = AGrid.grad(h0)
+    gradx, grady = AGrid.grad(h0, rdx, rdy)
     return -9.80 * gradx, -9.80 * grady
 
 
@@ -74,9 +75,9 @@ def calculate_pgf_vis_2d(celerity_x, celerity_y, rdx, rdy, u, v):
     return jnp.pad(-diff_x, pad_shape), jnp.pad(-diff_y, pad_shape)
 
 
-def calculate_advection(vb_cx, ub_cy, ub_cx, vb_cy, vb_ct, ub_ct, rdx, rdy):
+def calculate_advection(vb_cx, ub_cy, ub_cx, vb_cy, vb_ct, ub_ct, rdx, rdy, rda, d_dx, c_dy):
     """Determine non-linear momentum advection using absolute vorticity and kinetic energy gradients."""
-    vort = AGrid.vorticity(vb_cx, ub_cy)
+    vort = AGrid.vorticity(vb_cx, ub_cy, rda, d_dx, c_dy)
     kin_u = 0.5 * (ub_cx**2 + vb_cx**2)
     kin_v = 0.5 * (vb_cy**2 + ub_cy**2)
     core_advx = (
@@ -96,37 +97,40 @@ def calculate_advection(vb_cx, ub_cy, ub_cx, vb_cy, vb_ct, ub_ct, rdx, rdy):
     return advx, advy
 
 
-def _step_rk_logic(h0, h0p, ub, vb, ubp, vbp, consts, dt, beta_d, is_laststep):
+def _step_rk_logic(h0, h0p, ub, vb, ubp, vbp, consts, dt, beta_d, is_laststep, px, py):
     """
     Core fractional stage execution of the Runge-Kutta operator for SPMD barotropic progression.
     Validates physical dynamics (continuity, PGF, advection) per localized tile iteration.
     """
-    dzph_x, dzph_y, pax, pxb, whx, pay, pyb, why, wgp, rdx, rdy, a_f = consts
+    (dzph_x, dzph_y, rdx, rdy, a_f,
+     coef, loc_i, loc_j, a_c2l, a_l2c, inner, outer,
+     a_gct, a_sina, rda, c_dy, d_dx,
+     pax, pxb, whx, pay, pyb, why, wgp) = consts
 
     # Edge Gravity Wave & Viscosity Processing
     celerity_x, celerity_y = get_celerity(h0, dzph_x, dzph_y)
-    ub_ct, vb_ct, ub_cx, ub_cy, vb_cx, vb_cy = Remap.vector_trans_2d(ub, vb)
+    ub_ct, vb_ct, ub_cx, ub_cy, vb_cx, vb_cy = Remap.vector_trans_2d(ub, vb, a_gct, a_sina)
     ub_cx, vb_cy = get_vel_vis_2d(celerity_x, celerity_y, h0, ub_cx, vb_cy)
     flux_hu, flux_hv = flux_calculation(h0, ub_cx, vb_cy, dzph_x, dzph_y)
 
     if is_laststep:
         flux_hu, flux_hv = Communication.boundary_communication(flux_hu, flux_hv)
 
-    div_out = AGrid.div(flux_hu, flux_hv)
+    div_out = AGrid.div(flux_hu, flux_hv, rda, c_dy, d_dx)
     new_h0 = h0p - div_out * dt
     
     # ------------------------------------------------------------------
     # ASYNC COMMUNICATION OVERLAP (Latency Hiding)
     # The XLA compiler will dispatch the network gather for new_h0 here.
     # ------------------------------------------------------------------
-    new_h0 = Cube.ext_scalar(new_h0)
+    new_h0 = ext_scalar(new_h0, coef, loc_i, loc_j, px, py)
 
     # ------------------------------------------------------------------
     # INDEPENDENT COMPUTATION (Heavy Physics)
     # Placed here so XLA can schedule them to execute asynchronously 
     # alongside the network transfer of new_h0.
     # ------------------------------------------------------------------
-    advx, advy = calculate_advection(vb_cx, ub_cy, ub_cx, vb_cy, vb_ct, ub_ct, rdx, rdy)
+    advx, advy = calculate_advection(vb_cx, ub_cy, ub_cx, vb_cy, vb_ct, ub_ct, rdx, rdy, rda, d_dx, c_dy)
     vis_x, vis_y = calculate_pgf_vis_2d(celerity_x, celerity_y, rdx, rdy, ub_ct, vb_ct)
 
     # ------------------------------------------------------------------
@@ -134,7 +138,7 @@ def _step_rk_logic(h0, h0p, ub, vb, ubp, vbp, consts, dt, beta_d, is_laststep):
     # Data is formally consumed causing the asynchronous barrier to yield.
     # ------------------------------------------------------------------
     h0_tem = fb_scheme(new_h0, h0, beta_d)
-    pgf_u, pgf_v = calculate_pgf(h0_tem)
+    pgf_u, pgf_v = calculate_pgf(h0_tem, rdx, rdy)
 
     # ------------------------------------------------------------------
     # MAXIMUM KERNEL FUSION (SPMD Local Execution)
@@ -145,7 +149,7 @@ def _step_rk_logic(h0, h0p, ub, vb, ubp, vbp, consts, dt, beta_d, is_laststep):
     new_ub = ubp + (pgf_u + advx + a_f * vb_ct + vis_x) * dt
     new_vb = vbp + (pgf_v + advy - a_f * ub_ct + vis_y) * dt
 
-    new_ub, new_vb = Cube.ext_vector(new_ub, new_vb)
+    new_ub, new_vb = ext_vector(new_ub, new_vb, coef, loc_i, loc_j, a_c2l, a_l2c, inner, outer, px, py)
 
     return (
         new_h0,

@@ -44,4 +44,4 @@ class Initial:
         self.momentum = Momentum(self.namelist)
 
         # Schedule
-        Schedule.configure(self.namelist, ["barotropic"])
+        Schedule.configure(self.namelist, self.momentum, ["barotropic"])

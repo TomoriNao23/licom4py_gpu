@@ -1,10 +1,18 @@
 """
 File: spmd.py
-Description: Generalized Single Program Multiple Data (SPMD) compilation wrapper for LICOM.
-             Provides the core translation layer between global tracer tensors and local block execution.
+Description: SPMD compilation wrapper for LICOM.
+    Provides the translation layer between global distributed arrays
+    and local shard execution via shard_map + JIT.
+
+    All data is passed explicitly through (state, consts) — no monkey-patching.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2026-04-07
+Updated: 2026-04-13
+
+REVISION HISTORY:
+    07/04/2026 - Initial implementation with monkey-patching
+    13/04/2026 - Eliminated monkey-patching; all data through explicit parameters
 """
 
 # Third-party imports
@@ -28,68 +36,35 @@ def _spec(x):
 
 def make_spmd_jit(core_fn, state, consts, static_argnums=(2, 3)):
     """
-    Generalized JIT parallel compilation wrapper for distributed processing.
-    Performs static Monkey Patching during Tracing, and executes zero-overhead Local Shard boundary calls during real computation.
+    JIT parallel compilation wrapper for distributed processing.
+    All grid data is passed explicitly through state/consts — no singleton patching.
 
     Args:
-        core_fn: Pure function to be parallelized, signature must be (state, consts, *static_args)
-        state: Tuple of state inputs composed of JAX Distributed Arrays (with Sharding layouts)
-        consts: Tuple of static, read-only parameter inputs
-        static_argnums: Specifies which arguments in wrapper are static constants (starts from 2 by default)
+        core_fn: Pure function, signature (state, consts, *static_args)
+        state: Tuple of mutable state arrays (with Sharding layouts)
+        consts: Tuple of read-only parameter arrays
+        static_argnums: Which wrapper args are static constants (default: args 2, 3)
     """
-    # Local application imports
-    from licom.duogrid import Dg
-    from licom.kernel import Cube
-
-    # Extract shard specs for state and consts to explicitly prevent UnspecifiedValue JIT crashes
+    # Extract shard specs for shard_map in/out
     state_specs = jax.tree_util.tree_map(_spec, state)
     consts_specs = jax.tree_util.tree_map(_spec, consts)
 
-    # Extract intrinsic sharding definitions to be bound to the final JIT decorator
+    # Extract shardings for JIT in/out
     state_sh = jax.tree_util.tree_map(_sh, state)
     consts_sh = jax.tree_util.tree_map(_sh, consts)
 
-    # Statically extract the patch mapping table from singleton topological objects (Dg, Cube)
-    patch_keys = []
-    patch_specs = []
-    for obj in (Dg, Cube):
-        for k, v in vars(obj).items():
-            if hasattr(v, "shape") and hasattr(v, "sharding"):
-                patch_keys.append((obj, k))
-                patch_specs.append(_spec(v))
-    patch_specs = tuple(patch_specs)
-
-    # Define the external model wrapper, utilizing variadic arguments to support distinct physical step constants
     def wrapper(s, c, *static_args):
-        # 4.1 Extract local tracer references of the targeted global arrays
-        patch_vals = tuple(getattr(obj, k) for obj, k in patch_keys)
+        def map_fn(s_inner, c_inner):
+            return core_fn(s_inner, c_inner, *static_args)
 
-        # 4.2 Define the shard_map parallel computational core kernel
-        def map_fn(s_inner, c_inner, patch_inner):
-            # Cache original global singleton attributes
-            old_vals = [getattr(obj, k) for obj, k in patch_keys]
-
-            # Dynamically attach incoming local sliced tracers to module-level singleton objects
-            for (obj, k), mapped_v in zip(patch_keys, patch_inner):
-                setattr(obj, k, mapped_v)
-
-            try:
-                # 4.3 CORE: Execute the JIT mathematical computation
-                return core_fn(s_inner, c_inner, *static_args)
-            finally:
-                # 4.4 Detach local references from singletons, fully restoring original global attributes
-                for (obj, k), orig_v in zip(patch_keys, old_vals):
-                    setattr(obj, k, orig_v)
-
-        # 4.5 Launch shard_map submitting to the target execution Mesh
         sharded_fn = shard_map(
             map_fn,
             mesh=GPU_Mesh.mesh,
-            in_specs=(state_specs, consts_specs, patch_specs),
+            in_specs=(state_specs, consts_specs),
             out_specs=state_specs,
             check_rep=False,
         )
-        return sharded_fn(s, c, patch_vals)
+        return sharded_fn(s, c)
 
     return jit(
         wrapper,

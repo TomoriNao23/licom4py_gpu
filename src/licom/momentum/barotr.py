@@ -1,11 +1,11 @@
 """
 File: barotr.py
-Description: High-performance barotropic time stepping methods for Momentum class.
-    Consolidated with JIT compatibility for sharded JAX execution.
+Description: Pure barotropic RK core functions for LICOM.
+    Contains only the mathematical kernels — no JIT, no state declarations.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-22
-Updated: 2026-04-07
+Updated: 2026-04-13
 
 REVISION HISTORY:
     22/09/2025 - Initial implementation of barotropic solver
@@ -13,141 +13,75 @@ REVISION HISTORY:
     19/03/2026 - Refactor imports to package-level paths
     04/04/2026 - Fix JAX multidimensional UnspecifiedValue sharding issue and strip isb from jit state
     07/04/2026 - Optimized JIT static bindings and moved logic details to markdown
+    13/04/2026 - Stripped to pure RK cores; all data through explicit parameters
 """
 
 # Third-party imports
 import jax
-import jax.numpy as jnp
-from jax import jit
-
-# Local application imports
-from licom.duogrid import Dg
-from licom.kernel import (
-    Communication,
-    Cube,
-    GPU_Mesh,
-    auto_pack,
-    auto_unpack,
-    make_spmd_jit,
-)
-from licom.operators import AGrid, Poly, Remap
 
 from .barotr_pure import _step_rk_logic
 
 # =====================================================================
-# Main Solver JIT (Handles all tiles)
+# Pure RK Barotropic Cores
+# =====================================================================
+#
+# State layout (from schedule.STATE_KEYS):
+#   [0:16]  core:     h0, h0p, ub, vb, ubp, vbp, celerity_x/y, ub_ct/vb_ct, ub_cx/ub_cy, vb_cx/vb_cy, advx, advy
+#   [16:23] coupling: pax, pxb, whx, pay, pyb, why, wgp
+#
+# Consts layout (from schedule.CONST_SOURCES):
+#   [0:5]   geometry: dzph_x, dzph_y, rdx, rdy, a_f
+#   [5:12]  cube:     k2e_coef, loc_i_local, loc_j_local, a_c2l, a_l2c, inner, outer
+#
+# _step_rk_logic expects:
+#   consts = (dzph_x, dzph_y, rdx, rdy, a_f, coef, loc_i, loc_j, a_c2l, a_l2c, inner, outer, pax, pxb, whx, pay, pyb, why, wgp)
 # =====================================================================
 
 
-def _barotr_rk2_core(state, consts, nbb, dtb):
+def _barotr_rk2_core(state, consts, nbb, dtb, px, py):
+    # Extract coupling fields (constant within nbb barotropic sub-steps)
+    coupling = state[16:23]  # pax, pxb, whx, pay, pyb, why, wgp
+    # Compose full consts: Dg fields + cube arrays + coupling fields
+    full_consts = consts + coupling
+
     def body_fun(i, val):
-        h0, h0p, ub, vb, ubp, vbp, *others = val
+        h0, h0p, ub, vb, ubp, vbp, *_ = val
         # RK2 Step 1
         h0_1, ub_1, vb_1, *_ = _step_rk_logic(
-            h0, h0p, ub, vb, ubp, vbp, consts, dtb / 2.0, 0.0, False
+            h0, h0p, ub, vb, ubp, vbp, full_consts, dtb / 2.0, 0.0, False, px, py
         )
         # RK2 Step 2
-        res2 = _step_rk_logic(h0_1, h0p, ub_1, vb_1, ubp, vbp, consts, dtb, 0.0, True)
+        res2 = _step_rk_logic(
+            h0_1, h0p, ub_1, vb_1, ubp, vbp, full_consts, dtb, 0.0, True, px, py
+        )
         h0_2, ub_2, vb_2 = res2[0], res2[1], res2[2]
-        return (h0_2, h0_2, ub_2, vb_2, ub_2, vb_2, *res2[3:])
+        # Core fields updated; coupling fields [16:23] unchanged (pass-through)
+        return (h0_2, h0_2, ub_2, vb_2, ub_2, vb_2, *res2[3:]) + coupling
 
     return jax.lax.fori_loop(0, nbb, body_fun, state)
 
 
-def _barotr_rk3_core(state, consts, nbb, dtb):
+def _barotr_rk3_core(state, consts, nbb, dtb, px, py):
+    # Extract coupling fields (constant within nbb barotropic sub-steps)
+    coupling = state[16:23]  # pax, pxb, whx, pay, pyb, why, wgp
+    # Compose full consts: Dg fields + cube arrays + coupling fields
+    full_consts = consts + coupling
+
     def body_fun(i, val):
-        h0, h0p, ub, vb, ubp, vbp, *others = val
+        h0, h0p, ub, vb, ubp, vbp, *_ = val
         # RK3 Step 1
-        res1 = _step_rk_logic(h0, h0p, ub, vb, ubp, vbp, consts, dtb / 3.0, 1.0, False)
+        res1 = _step_rk_logic(
+            h0, h0p, ub, vb, ubp, vbp, full_consts, dtb / 3.0, 1.0, False, px, py
+        )
         # RK3 Step 2
         res2 = _step_rk_logic(
-            res1[0], h0p, res1[1], res1[2], ubp, vbp, consts, dtb / 2.0, 1.0, False
+            res1[0], h0p, res1[1], res1[2], ubp, vbp, full_consts, dtb / 2.0, 1.0, False, px, py
         )
         # RK3 Step 3
         res3 = _step_rk_logic(
-            res2[0], h0p, res2[1], res2[2], ubp, vbp, consts, dtb, 1.0, True
+            res2[0], h0p, res2[1], res2[2], ubp, vbp, full_consts, dtb, 1.0, True, px, py
         )
-        return (res3[0], res3[0], res3[1], res3[2], res3[1], res3[2], *res3[3:])
+        # Core fields updated; coupling fields [16:23] unchanged (pass-through)
+        return (res3[0], res3[0], res3[1], res3[2], res3[1], res3[2], *res3[3:]) + coupling
 
     return jax.lax.fori_loop(0, nbb, body_fun, state)
-
-
-_barotr_rk2_jit = None
-_barotr_rk3_jit = None
-
-# =====================================================================
-# Field Declarations (defined once, auto pack/unpack)
-# =====================================================================
-
-# State fields: mutable, both input and output of the JIT graph
-_STATE_KEYS = (
-    "h0",
-    "h0p",
-    "ub",
-    "vb",
-    "ubp",
-    "vbp",
-    "celerity_x",
-    "celerity_y",
-    "ub_ct",
-    "vb_ct",
-    "ub_cx",
-    "ub_cy",
-    "vb_cx",
-    "vb_cy",
-    "advx",
-    "advy",
-)
-
-# Const fields: read-only inputs. (source_object, attribute_name)
-_CONST_SOURCES = (
-    (Dg, "dzph_x"),
-    (Dg, "dzph_y"),
-    (None, "pax"),
-    (None, "pxb"),
-    (None, "whx"),
-    (None, "pay"),
-    (None, "pyb"),
-    (None, "why"),
-    (None, "wgp"),
-    (Dg, "rdx"),
-    (Dg, "rdy"),
-    (Dg, "a_f"),
-)
-
-# =====================================================================
-# Class Methods
-# =====================================================================
-
-
-def add_barotropic_methods(cls):
-    def setup_barotropic_jit(self, rk_type):
-        """
-        Called once during initialization: dynamically packs instance variables and validates the full SPMD
-        JIT computation graph, caching it to the Momentum instance for zero-overhead invocation.
-        """
-        self._barotr_state, self._barotr_consts = auto_pack(
-            self, _STATE_KEYS, _CONST_SOURCES
-        )
-
-        # Select between RK2 and RK3 core dynamics based on the defined order
-        core_fn = _barotr_rk2_core if rk_type == 2 else _barotr_rk3_core
-
-        with GPU_Mesh.mesh:
-            self._barotr_jit_fn = make_spmd_jit(
-                core_fn, self._barotr_state, self._barotr_consts, static_argnums=(2, 3)
-            )
-
-    def barotr(self):
-        """
-        Unified time-stepping interface that executes the natively sharded JIT graph compiled earlier.
-        """
-        with GPU_Mesh.mesh:
-            self._barotr_state = self._barotr_jit_fn(
-                self._barotr_state, self._barotr_consts, self.nbb, self.dtb
-            )
-            auto_unpack(self, _STATE_KEYS, self._barotr_state)
-
-    cls.setup_barotropic_jit = setup_barotropic_jit
-    cls.barotr = barotr
-    return cls
