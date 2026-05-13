@@ -8,11 +8,12 @@ Description: SPMD compilation wrapper for LICOM.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2026-04-07
-Updated: 2026-04-13
+Updated: 2026-05-14
 
 REVISION HISTORY:
     07/04/2026 - Initial implementation with monkey-patching
     13/04/2026 - Eliminated monkey-patching; all data through explicit parameters
+    14/05/2026 - Updated comments
 """
 
 # Third-party imports
@@ -81,7 +82,8 @@ def make_spmd_jit(core_fn, state, consts, static_argnums=(2, 3)):
 
 def auto_pack(instance, state_keys, const_sources):
     """
-    Generic packing function: dynamically bundles required fields from a class instance into state and consts tuples for SPMD JIT consumption.
+    Generic packing function: dynamically bundles required fields from a class 
+    instance into state and consts tuples for SPMD JIT consumption.
     """
     state = tuple(getattr(instance, k) for k in state_keys)
     consts = tuple(
@@ -93,7 +95,8 @@ def auto_pack(instance, state_keys, const_sources):
 
 def auto_unpack(instance, state_keys, state):
     """
-    Generic unpacking function: systematically writes back the JIT-returned state tuple into the caller instance variables.
+    Generic unpacking function: systematically writes back the JIT-returned
+    state tuple into the caller instance variables.
     """
     for k, v in zip(state_keys, state):
         setattr(instance, k, v)

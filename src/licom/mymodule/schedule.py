@@ -18,13 +18,14 @@ Description: Global scheduling system for LICOM model execution.
 
 Author: Chtholly <mengleshan@mail.iap.ac.cn>
 Created: 2025-09-03
-Updated: 2026-04-13
+Updated: 2026-05-14
 
 REVISION HISTORY:
     03/09/2025 - Initial implementation of Schedule class
     07/01/2026 - Refactored execution strategy for performance optimization
     19/03/2026 - Refactor imports to package-level paths
     13/04/2026 - Lifted SPMD compilation to Schedule; Python loop → JAX fori_loop
+    14/05/2026 - Using async to print global diagnostics and future IO
 """
 
 from __future__ import annotations
@@ -225,6 +226,7 @@ class Schedule:
             if namelist.diag_freq is not None and namelist.diag_freq > 0
             else None
         )
+        cls.async_threads: int = getattr(namelist, 'async_threads', 8)
 
         # Static scalars (compiled into JIT graph as constants)
         cls._nbb = momentum.nbb
@@ -241,6 +243,32 @@ class Schedule:
             )
 
     @classmethod
+    def _async_io_and_diag(cls, time_str, momentum, state_futures):
+        """
+        Background task:
+        1. Block and gather sharded arrays from GPU to CPU memory.
+        2. Unpack into momentum object.
+        3. Execute diagnostics and future IO logic on CPU.
+        """
+        # Third-party imports
+        import jax
+        
+        # Gather sharded array to CPU memory (blocks only this background thread)
+        cpu_state = jax.device_get(state_futures)
+        
+        # Unpack NumPy arrays back to momentum object
+        auto_unpack(momentum, STATE_KEYS, cpu_state)
+        
+        # Perform pure-CPU diagnostics (or future IO)
+        momentum.print_global_diag(time_str)
+
+    @classmethod
+    def _dispatch_async_task(cls, executor, time_prefix, momentum):
+        """Helper to format time and submit async IO/diag task to the background pool."""
+        time_str = f"{time_prefix}: {cls.current_time.prev_dt.strftime('%Y-%m-%d-%H')}"
+        executor.submit(cls._async_io_and_diag, time_str, momentum, cls._state)
+
+    @classmethod
     def run(cls, momentum: Momentum) -> None:
         """
         Execute the full simulation.
@@ -248,32 +276,38 @@ class Schedule:
         Data flow:
             cls._state ──→ _jit_fn ──→ cls._state ──→ _jit_fn ──→ ...
                  ↑            (fori_loop: diag_interval bc steps)      ↓
-              pack (once)                                        unpack (diag only)
+              pack (once)                                        async unpack/IO
 
         - diag_freq=0:  1 JIT dispatch for the entire simulation
         - diag_freq=24: 1 JIT dispatch per day (24 bc steps each)
         """
+        # Standard library imports
+        import concurrent.futures
+        
         total = cls.total_baroclinic_steps
         chunk = cls.diag_interval if cls.diag_interval is not None else total
 
-        for start in range(0, total, chunk):
-            n = min(chunk, total - start)
+        # Start a single-worker thread pool for orderly async IO & diagnostics
+        with concurrent.futures.ThreadPoolExecutor(max_workers=cls.async_threads) as executor:
+            cls._dispatch_async_task(executor, "Initial time", momentum)
 
-            # ── Single JIT dispatch: n bc steps in fori_loop ──
-            with GPU_Mesh.mesh:
-                cls._state = cls._jit_fn(
-                    cls._state, cls._consts, n, cls._nbb, cls._dtb
-                )
+            for start in range(0, total, chunk):
+                n = min(chunk, total - start)
 
-            # ── Host-side: advance time + diagnostics ──
-            cls.current_time.advance(n)
-            if cls.diag_interval is not None:
-                auto_unpack(momentum, STATE_KEYS, cls._state)
-                print(f"Time: {cls.current_time.prev_dt.strftime('%Y-%m-%d-%H')}")
-                momentum.print_global_diag()
+                # ── Single JIT dispatch: n bc steps in fori_loop ──
+                # This returns futures immediately
+                with GPU_Mesh.mesh:
+                    cls._state = cls._jit_fn(
+                        cls._state, cls._consts, n, cls._nbb, cls._dtb
+                    )
 
-        # Final: always unpack state back to momentum + print last diagnostic
-        auto_unpack(momentum, STATE_KEYS, cls._state)
-        if cls.diag_interval is None:
-            print(f"Time: {cls.current_time.prev_dt.strftime('%Y-%m-%d-%H')}")
-            momentum.print_global_diag()
+                # ── Host-side: advance time + dispatch async IO ──
+                cls.current_time.advance(n)
+                if cls.diag_interval is not None:
+                    cls._dispatch_async_task(executor, "Time", momentum)
+
+            # Final diagnostic
+            if cls.diag_interval is None:
+                cls._dispatch_async_task(executor, "Final time", momentum)
+            
+            # The context manager automatically waits for all async threads to complete before exiting

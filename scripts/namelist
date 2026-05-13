@@ -15,8 +15,8 @@ integration_days = 2
 #integration_years = 5
 
 [grid]
-nx = 384
-ny = 384
+nx = 96
+ny = 96
 npz = 30
 
 [gpu_mesh]
@@ -24,5 +24,6 @@ pdev = 1
 px = 2
 py = 2
 
-[diagnostics]
+[async_io]
 diag_freq = 24
+async_threads = 8
