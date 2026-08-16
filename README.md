@@ -49,10 +49,10 @@ flowchart TB
   (3) *python_variable 为正压积分中使用的python端参数变量列表,例如dtb,nbb
 
 ##### step 4.src/licom/mymodule/schedule.py 执行侧完善
-  (1) 为STATE_KEYS,CONST_SOURCES 补充完整字段
-  (2) schedule_core函数添加JIT块内部调用的所有过程的纯函数
-  (3) configure函数中使用src/licom/kernel/spmd.py的autopack函数将momentum的指针打包
-  (4) configure函数中使用src/licom/kernel/spmd.py的make_spmd_jit函数编译
+  (1) 为STATE_KEYS,CONST_SOURCES 补充完整字段  
+  (2) schedule_core函数添加JIT块内部调用的所有过程的纯函数  
+  (3) configure函数中使用src/licom/kernel/spmd.py的autopack函数将momentum的指针打包  
+  (4) configure函数中使用src/licom/kernel/spmd.py的make_spmd_jit函数编译  
 
 
 
